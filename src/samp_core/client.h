@@ -121,7 +121,10 @@ private:
     uint32_t          challenge_  = 0;
 
     // ---- Reliability layer ----
-    uint16_t              send_msg_num_  = 0;
+    // Atomic because the run() thread (keepalives/acks) and the Python asyncio
+    // thread (user send_rpc calls) both increment this concurrently; run()
+    // releases the GIL so the two threads truly execute C++ in parallel.
+    std::atomic<uint16_t> send_msg_num_{0};
     std::mutex            ack_mutex_;
     std::vector<uint16_t> pending_acks_;
 };
