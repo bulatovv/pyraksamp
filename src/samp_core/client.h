@@ -29,21 +29,42 @@ constexpr uint8_t ID_CONNECTION_BANNED            = 36;
 constexpr uint8_t ID_INVALID_PASSWORD             = 37;
 
 // RPC IDs — server→client (receive)
-constexpr uint8_t RPC_SERVER_JOIN      = 137;
-constexpr uint8_t RPC_SERVER_QUIT      = 138;
-constexpr uint8_t RPC_INIT_GAME        = 139;
-constexpr uint8_t RPC_CONNECTION_REJ   = 130;
-constexpr uint8_t RPC_CHAT             = 101;
-constexpr uint8_t RPC_CLIENT_MESSAGE   = 93;
-constexpr uint8_t RPC_DIALOG_BOX       = 61;
-constexpr uint8_t RPC_GAME_TEXT        = 73;
-constexpr uint8_t RPC_SET_HEALTH       = 14;
-constexpr uint8_t RPC_SET_ARMOUR       = 66;
-constexpr uint8_t RPC_SET_POSITION     = 12;
-constexpr uint8_t RPC_SET_CHECKPOINT   = 107;
-constexpr uint8_t RPC_DISABLE_CHECKPOINT = 37;
-constexpr uint8_t RPC_WORLD_PLAYER_ADD = 32;
-constexpr uint8_t RPC_WORLD_PLAYER_REMOVE = 163;
+constexpr uint8_t RPC_SERVER_JOIN           = 137;
+constexpr uint8_t RPC_SERVER_QUIT           = 138;
+constexpr uint8_t RPC_INIT_GAME             = 139;
+constexpr uint8_t RPC_CONNECTION_REJ        = 130;
+constexpr uint8_t RPC_CHAT                  = 101;
+constexpr uint8_t RPC_CLIENT_MESSAGE        = 93;
+constexpr uint8_t RPC_DIALOG_BOX            = 61;
+constexpr uint8_t RPC_GAME_TEXT             = 73;
+constexpr uint8_t RPC_SET_HEALTH            = 14;
+constexpr uint8_t RPC_SET_ARMOUR            = 66;
+constexpr uint8_t RPC_SET_POSITION          = 12;
+constexpr uint8_t RPC_SET_CHECKPOINT        = 107;
+constexpr uint8_t RPC_DISABLE_CHECKPOINT    = 37;
+constexpr uint8_t RPC_WORLD_PLAYER_ADD      = 32;
+constexpr uint8_t RPC_WORLD_PLAYER_REMOVE   = 163;
+constexpr uint8_t RPC_SET_PLAYER_NAME       = 11;
+constexpr uint8_t RPC_TOGGLE_CONTROLLABLE   = 15;
+constexpr uint8_t RPC_SET_PLAYER_TIME       = 29;
+constexpr uint8_t RPC_SEND_DEATH_MESSAGE    = 55;
+constexpr uint8_t RPC_SET_ARMED_WEAPON      = 67;
+constexpr uint8_t RPC_SET_SPAWN_INFO        = 68;
+constexpr uint8_t RPC_SET_PLAYER_TEAM       = 69;
+constexpr uint8_t RPC_PUT_IN_VEHICLE        = 70;
+constexpr uint8_t RPC_REMOVE_FROM_VEHICLE   = 71;
+constexpr uint8_t RPC_SET_PLAYER_COLOR      = 72;
+constexpr uint8_t RPC_SET_WORLD_TIME        = 94;
+constexpr uint8_t RPC_TOGGLE_SPECTATING     = 124;
+constexpr uint8_t RPC_SET_WANTED_LEVEL      = 133;
+constexpr uint8_t RPC_SET_WEAPON_AMMO       = 145;
+constexpr uint8_t RPC_SET_GRAVITY           = 146;
+constexpr uint8_t RPC_SET_WEATHER           = 152;
+constexpr uint8_t RPC_SET_PLAYER_SKIN       = 153;
+constexpr uint8_t RPC_SET_INTERIOR          = 156;
+constexpr uint8_t RPC_WORLD_VEHICLE_ADD     = 164;
+constexpr uint8_t RPC_WORLD_VEHICLE_REMOVE  = 165;
+constexpr uint8_t RPC_DEATH_BROADCAST       = 166;
 
 // RPC IDs — client→server (send)
 constexpr uint8_t RPC_CLIENT_JOIN      = 25;
@@ -54,6 +75,7 @@ constexpr uint8_t RPC_DIALOG_RESPONSE  = 62;
 constexpr uint8_t RPC_DEATH            = 53;
 constexpr uint8_t RPC_ENTER_VEHICLE    = 26;
 constexpr uint8_t RPC_EXIT_VEHICLE     = 154;
+constexpr uint8_t RPC_SERVER_COMMAND   = 50;
 
 constexpr int     NETGAME_VERSION = 4057;
 constexpr uint16_t NETCODE_CONNCOOKIELULZ = 0x6969;
@@ -127,12 +149,43 @@ public:
     std::function<void(int,int,int,float,float,float,float,uint32_t,int)> on_player_streamed_in;
     std::function<void(int)>                                 on_player_streamed_out;
 
+    // Player info
+    std::function<void(uint16_t, std::string, uint8_t)>      on_player_name;       // pid, name, success
+    std::function<void(uint8_t)>                             on_toggle_controllable;
+    std::function<void(uint8_t, uint8_t)>                    on_player_time;       // hour, minute
+    std::function<void(uint16_t, uint16_t, uint8_t)>         on_death_message;     // killer, player, weapon
+    std::function<void(uint32_t)>                            on_set_armed_weapon;  // weapon_id
+    std::function<void(uint8_t, uint32_t,
+                       float, float, float, float,
+                       uint32_t, uint32_t, uint32_t,
+                       uint32_t, uint32_t, uint32_t)>        on_spawn_info;        // team,skin,x,y,z,rot,w[3],a[3]
+    std::function<void(uint16_t, uint8_t)>                   on_player_team;       // pid, team
+    std::function<void(uint16_t, uint8_t)>                   on_put_in_vehicle;    // vehicle_id, seat_id
+    std::function<void()>                                    on_remove_from_vehicle;
+    std::function<void(uint16_t, uint32_t)>                  on_player_color;      // pid, color
+    std::function<void(uint8_t)>                             on_world_time;        // hour
+    std::function<void(bool)>                                on_toggle_spectating;
+    std::function<void(uint8_t)>                             on_wanted_level;
+    std::function<void(uint8_t, uint16_t)>                   on_weapon_ammo;       // weapon_id, ammo
+    std::function<void(float)>                               on_gravity;
+    std::function<void(uint8_t)>                             on_weather;
+    std::function<void(int32_t, uint32_t)>                   on_player_skin;       // pid, skin_id
+    std::function<void(uint8_t)>                             on_set_interior;
+    std::function<void(uint16_t, int32_t,
+                       float, float, float, float,
+                       uint8_t, uint8_t, float, uint8_t,
+                       uint32_t, uint32_t, uint8_t, uint8_t,
+                       uint8_t, uint8_t, uint32_t, uint32_t)> on_vehicle_streamed_in;
+    std::function<void(uint16_t)>                            on_vehicle_streamed_out;
+    std::function<void(uint16_t)>                            on_player_death;
+
     // ── Send helpers ───────────────────────────────────────────────────────────
     void send_dialog_response(uint16_t dialog_id, uint8_t button,
                               uint16_t list_item, const std::string& text);
     void send_death(uint8_t weapon_id = 0, uint16_t killer_id = 0xFFFF);
     void send_enter_vehicle(uint16_t vehicle_id, bool is_passenger = false);
     void send_exit_vehicle(uint16_t vehicle_id);
+    void send_command(const std::string& text);
 
 private:
     // ---- Network helpers ----

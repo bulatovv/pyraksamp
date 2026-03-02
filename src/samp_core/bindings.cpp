@@ -194,6 +194,189 @@ PYBIND11_MODULE(_core, m) {
                 };
             })
 
+        // Player info / name
+        .def_property("on_player_name",
+            [](const SAMPClient& self) { return self.on_player_name; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_player_name = nullptr; return; }
+                self.on_player_name = [cb](uint16_t pid, std::string name, uint8_t success) {
+                    py::gil_scoped_acquire _; cb(pid, name, success);
+                };
+            })
+        .def_property("on_toggle_controllable",
+            [](const SAMPClient& self) { return self.on_toggle_controllable; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_toggle_controllable = nullptr; return; }
+                self.on_toggle_controllable = [cb](uint8_t moveable) {
+                    py::gil_scoped_acquire _; cb(moveable);
+                };
+            })
+        .def_property("on_player_time",
+            [](const SAMPClient& self) { return self.on_player_time; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_player_time = nullptr; return; }
+                self.on_player_time = [cb](uint8_t hour, uint8_t minute) {
+                    py::gil_scoped_acquire _; cb(hour, minute);
+                };
+            })
+        .def_property("on_death_message",
+            [](const SAMPClient& self) { return self.on_death_message; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_death_message = nullptr; return; }
+                self.on_death_message = [cb](uint16_t killer_id, uint16_t player_id, uint8_t weapon) {
+                    py::gil_scoped_acquire _; cb(killer_id, player_id, weapon);
+                };
+            })
+        .def_property("on_set_armed_weapon",
+            [](const SAMPClient& self) { return self.on_set_armed_weapon; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_set_armed_weapon = nullptr; return; }
+                self.on_set_armed_weapon = [cb](uint32_t weapon_id) {
+                    py::gil_scoped_acquire _; cb(weapon_id);
+                };
+            })
+        .def_property("on_spawn_info",
+            [](const SAMPClient& self) { return self.on_spawn_info; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_spawn_info = nullptr; return; }
+                self.on_spawn_info = [cb](uint8_t team, uint32_t skin,
+                                          float x, float y, float z, float rot,
+                                          uint32_t w1, uint32_t w2, uint32_t w3,
+                                          uint32_t a1, uint32_t a2, uint32_t a3) {
+                    py::gil_scoped_acquire _; cb(team, skin, x, y, z, rot, w1, w2, w3, a1, a2, a3);
+                };
+            })
+        .def_property("on_player_team",
+            [](const SAMPClient& self) { return self.on_player_team; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_player_team = nullptr; return; }
+                self.on_player_team = [cb](uint16_t pid, uint8_t team) {
+                    py::gil_scoped_acquire _; cb(pid, team);
+                };
+            })
+        .def_property("on_put_in_vehicle",
+            [](const SAMPClient& self) { return self.on_put_in_vehicle; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_put_in_vehicle = nullptr; return; }
+                self.on_put_in_vehicle = [cb](uint16_t vehicle_id, uint8_t seat_id) {
+                    py::gil_scoped_acquire _; cb(vehicle_id, seat_id);
+                };
+            })
+        .def_property("on_remove_from_vehicle",
+            [](const SAMPClient& self) { return self.on_remove_from_vehicle; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_remove_from_vehicle = nullptr; return; }
+                self.on_remove_from_vehicle = [cb]() {
+                    py::gil_scoped_acquire _; cb();
+                };
+            })
+        .def_property("on_player_color",
+            [](const SAMPClient& self) { return self.on_player_color; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_player_color = nullptr; return; }
+                self.on_player_color = [cb](uint16_t pid, uint32_t color) {
+                    py::gil_scoped_acquire _; cb(pid, color);
+                };
+            })
+        .def_property("on_world_time",
+            [](const SAMPClient& self) { return self.on_world_time; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_world_time = nullptr; return; }
+                self.on_world_time = [cb](uint8_t hour) {
+                    py::gil_scoped_acquire _; cb(hour);
+                };
+            })
+        .def_property("on_toggle_spectating",
+            [](const SAMPClient& self) { return self.on_toggle_spectating; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_toggle_spectating = nullptr; return; }
+                self.on_toggle_spectating = [cb](bool spectating) {
+                    py::gil_scoped_acquire _; cb(spectating);
+                };
+            })
+        .def_property("on_wanted_level",
+            [](const SAMPClient& self) { return self.on_wanted_level; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_wanted_level = nullptr; return; }
+                self.on_wanted_level = [cb](uint8_t level) {
+                    py::gil_scoped_acquire _; cb(level);
+                };
+            })
+        .def_property("on_weapon_ammo",
+            [](const SAMPClient& self) { return self.on_weapon_ammo; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_weapon_ammo = nullptr; return; }
+                self.on_weapon_ammo = [cb](uint8_t weapon_id, uint16_t ammo) {
+                    py::gil_scoped_acquire _; cb(weapon_id, ammo);
+                };
+            })
+        .def_property("on_gravity",
+            [](const SAMPClient& self) { return self.on_gravity; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_gravity = nullptr; return; }
+                self.on_gravity = [cb](float gravity) {
+                    py::gil_scoped_acquire _; cb(gravity);
+                };
+            })
+        .def_property("on_weather",
+            [](const SAMPClient& self) { return self.on_weather; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_weather = nullptr; return; }
+                self.on_weather = [cb](uint8_t weather_id) {
+                    py::gil_scoped_acquire _; cb(weather_id);
+                };
+            })
+        .def_property("on_player_skin",
+            [](const SAMPClient& self) { return self.on_player_skin; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_player_skin = nullptr; return; }
+                self.on_player_skin = [cb](int32_t pid, uint32_t skin_id) {
+                    py::gil_scoped_acquire _; cb(pid, skin_id);
+                };
+            })
+        .def_property("on_set_interior",
+            [](const SAMPClient& self) { return self.on_set_interior; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_set_interior = nullptr; return; }
+                self.on_set_interior = [cb](uint8_t interior_id) {
+                    py::gil_scoped_acquire _; cb(interior_id);
+                };
+            })
+        .def_property("on_vehicle_streamed_in",
+            [](const SAMPClient& self) { return self.on_vehicle_streamed_in; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_vehicle_streamed_in = nullptr; return; }
+                self.on_vehicle_streamed_in = [cb](uint16_t vid, int32_t model,
+                                                    float x, float y, float z, float angle,
+                                                    uint8_t color1, uint8_t color2,
+                                                    float health, uint8_t interior,
+                                                    uint32_t door_dmg, uint32_t panel_dmg,
+                                                    uint8_t light_dmg, uint8_t tire_dmg,
+                                                    uint8_t add_siren, uint8_t paintjob,
+                                                    uint32_t body_color1, uint32_t body_color2) {
+                    py::gil_scoped_acquire _;
+                    cb(vid, model, x, y, z, angle, color1, color2, health, interior,
+                       door_dmg, panel_dmg, light_dmg, tire_dmg,
+                       add_siren, paintjob, body_color1, body_color2);
+                };
+            })
+        .def_property("on_vehicle_streamed_out",
+            [](const SAMPClient& self) { return self.on_vehicle_streamed_out; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_vehicle_streamed_out = nullptr; return; }
+                self.on_vehicle_streamed_out = [cb](uint16_t vid) {
+                    py::gil_scoped_acquire _; cb(vid);
+                };
+            })
+        .def_property("on_player_death",
+            [](const SAMPClient& self) { return self.on_player_death; },
+            [](SAMPClient& self, py::object cb) {
+                if (cb.is_none()) { self.on_player_death = nullptr; return; }
+                self.on_player_death = [cb](uint16_t pid) {
+                    py::gil_scoped_acquire _; cb(pid);
+                };
+            })
+
         // ── Send helpers ───────────────────────────────────────────────────────
         .def("send_dialog_response",
              [](SAMPClient& self, uint16_t did, uint8_t btn, uint16_t item, const std::string& text) {
@@ -213,7 +396,10 @@ PYBIND11_MODULE(_core, m) {
              py::arg("vehicle_id"), py::arg("is_passenger") = false)
         .def("send_exit_vehicle",
              [](SAMPClient& self, uint16_t vid) { self.send_exit_vehicle(vid); },
-             py::arg("vehicle_id"));
+             py::arg("vehicle_id"))
+        .def("send_command",
+             [](SAMPClient& self, const std::string& text) { self.send_command(text); },
+             py::arg("text"));
 
     // Reliability enum values for send_rpc
     m.attr("UNRELIABLE")           = static_cast<int>(UNRELIABLE);
@@ -246,6 +432,29 @@ PYBIND11_MODULE(_core, m) {
     m.attr("RPC_SPAWN")              = static_cast<int>(RPC_SPAWN);
     m.attr("RPC_DIALOG_RESPONSE")    = static_cast<int>(RPC_DIALOG_RESPONSE);
     m.attr("RPC_DEATH")              = static_cast<int>(RPC_DEATH);
-    m.attr("RPC_ENTER_VEHICLE")      = static_cast<int>(RPC_ENTER_VEHICLE);
-    m.attr("RPC_EXIT_VEHICLE")       = static_cast<int>(RPC_EXIT_VEHICLE);
+    m.attr("RPC_ENTER_VEHICLE")          = static_cast<int>(RPC_ENTER_VEHICLE);
+    m.attr("RPC_EXIT_VEHICLE")           = static_cast<int>(RPC_EXIT_VEHICLE);
+    m.attr("RPC_SERVER_COMMAND")         = static_cast<int>(RPC_SERVER_COMMAND);
+    // new server→client
+    m.attr("RPC_SET_PLAYER_NAME")        = static_cast<int>(RPC_SET_PLAYER_NAME);
+    m.attr("RPC_TOGGLE_CONTROLLABLE")    = static_cast<int>(RPC_TOGGLE_CONTROLLABLE);
+    m.attr("RPC_SET_PLAYER_TIME")        = static_cast<int>(RPC_SET_PLAYER_TIME);
+    m.attr("RPC_SEND_DEATH_MESSAGE")     = static_cast<int>(RPC_SEND_DEATH_MESSAGE);
+    m.attr("RPC_SET_ARMED_WEAPON")       = static_cast<int>(RPC_SET_ARMED_WEAPON);
+    m.attr("RPC_SET_SPAWN_INFO")         = static_cast<int>(RPC_SET_SPAWN_INFO);
+    m.attr("RPC_SET_PLAYER_TEAM")        = static_cast<int>(RPC_SET_PLAYER_TEAM);
+    m.attr("RPC_PUT_IN_VEHICLE")         = static_cast<int>(RPC_PUT_IN_VEHICLE);
+    m.attr("RPC_REMOVE_FROM_VEHICLE")    = static_cast<int>(RPC_REMOVE_FROM_VEHICLE);
+    m.attr("RPC_SET_PLAYER_COLOR")       = static_cast<int>(RPC_SET_PLAYER_COLOR);
+    m.attr("RPC_SET_WORLD_TIME")         = static_cast<int>(RPC_SET_WORLD_TIME);
+    m.attr("RPC_TOGGLE_SPECTATING")      = static_cast<int>(RPC_TOGGLE_SPECTATING);
+    m.attr("RPC_SET_WANTED_LEVEL")       = static_cast<int>(RPC_SET_WANTED_LEVEL);
+    m.attr("RPC_SET_WEAPON_AMMO")        = static_cast<int>(RPC_SET_WEAPON_AMMO);
+    m.attr("RPC_SET_GRAVITY")            = static_cast<int>(RPC_SET_GRAVITY);
+    m.attr("RPC_SET_WEATHER")            = static_cast<int>(RPC_SET_WEATHER);
+    m.attr("RPC_SET_PLAYER_SKIN")        = static_cast<int>(RPC_SET_PLAYER_SKIN);
+    m.attr("RPC_SET_INTERIOR")           = static_cast<int>(RPC_SET_INTERIOR);
+    m.attr("RPC_WORLD_VEHICLE_ADD")      = static_cast<int>(RPC_WORLD_VEHICLE_ADD);
+    m.attr("RPC_WORLD_VEHICLE_REMOVE")   = static_cast<int>(RPC_WORLD_VEHICLE_REMOVE);
+    m.attr("RPC_DEATH_BROADCAST")        = static_cast<int>(RPC_DEATH_BROADCAST);
 }

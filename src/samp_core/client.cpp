@@ -470,6 +470,190 @@ void SAMPClient::handle_rpc(uint8_t rpc_id, const uint8_t* payload, int len) {
             break;
         }
 
+        case RPC_SET_PLAYER_NAME: {
+            // u16 pid | u8 len | char[len] | u8 success
+            uint16_t pid = bs.read_uint16_le();
+            uint8_t nlen = bs.read_uint8();
+            std::string name(nlen, '\0');
+            if (nlen > 0)
+                bs.read_aligned_bytes(reinterpret_cast<uint8_t*>(&name[0]), nlen);
+            uint8_t success = bs.read_uint8();
+            if (on_player_name) on_player_name(pid, name, success);
+            break;
+        }
+
+        case RPC_TOGGLE_CONTROLLABLE: {
+            uint8_t moveable = bs.read_uint8();
+            if (on_toggle_controllable) on_toggle_controllable(moveable);
+            break;
+        }
+
+        case RPC_SET_PLAYER_TIME: {
+            uint8_t hour   = bs.read_uint8();
+            uint8_t minute = bs.read_uint8();
+            if (on_player_time) on_player_time(hour, minute);
+            break;
+        }
+
+        case RPC_SEND_DEATH_MESSAGE: {
+            uint16_t killer_id = bs.read_uint16_le();
+            uint16_t player_id = bs.read_uint16_le();
+            uint8_t  weapon    = bs.read_uint8();
+            if (on_death_message) on_death_message(killer_id, player_id, weapon);
+            break;
+        }
+
+        case RPC_SET_ARMED_WEAPON: {
+            uint32_t weapon_id = bs.read_uint32_le();
+            if (on_set_armed_weapon) on_set_armed_weapon(weapon_id);
+            break;
+        }
+
+        case RPC_SET_SPAWN_INFO: {
+            // u8 team | u32 skin | u8 unused | f32 x,y,z | f32 rot
+            // | u32 weapon1 | u32 weapon2 | u32 weapon3
+            // | u32 ammo1   | u32 ammo2   | u32 ammo3
+            uint8_t  team   = bs.read_uint8();
+            uint32_t skin   = bs.read_uint32_le();
+            bs.read_uint8(); // unused
+            float x   = bs.read_float_le();
+            float y   = bs.read_float_le();
+            float z   = bs.read_float_le();
+            float rot = bs.read_float_le();
+            uint32_t w1 = bs.read_uint32_le();
+            uint32_t w2 = bs.read_uint32_le();
+            uint32_t w3 = bs.read_uint32_le();
+            uint32_t a1 = bs.read_uint32_le();
+            uint32_t a2 = bs.read_uint32_le();
+            uint32_t a3 = bs.read_uint32_le();
+            if (on_spawn_info) on_spawn_info(team, skin, x, y, z, rot, w1, w2, w3, a1, a2, a3);
+            break;
+        }
+
+        case RPC_SET_PLAYER_TEAM: {
+            uint16_t pid  = bs.read_uint16_le();
+            uint8_t  team = bs.read_uint8();
+            if (on_player_team) on_player_team(pid, team);
+            break;
+        }
+
+        case RPC_PUT_IN_VEHICLE: {
+            uint16_t vehicle_id = bs.read_uint16_le();
+            uint8_t  seat_id    = bs.read_uint8();
+            if (on_put_in_vehicle) on_put_in_vehicle(vehicle_id, seat_id);
+            break;
+        }
+
+        case RPC_REMOVE_FROM_VEHICLE:
+            if (on_remove_from_vehicle) on_remove_from_vehicle();
+            break;
+
+        case RPC_SET_PLAYER_COLOR: {
+            uint16_t pid   = bs.read_uint16_le();
+            uint32_t color = bs.read_uint32_le();
+            if (on_player_color) on_player_color(pid, color);
+            break;
+        }
+
+        case RPC_SET_WORLD_TIME: {
+            uint8_t hour = bs.read_uint8();
+            if (on_world_time) on_world_time(hour);
+            break;
+        }
+
+        case RPC_TOGGLE_SPECTATING: {
+            // u32 spectating (BOOL on Win32)
+            uint32_t spec = bs.read_uint32_le();
+            if (on_toggle_spectating) on_toggle_spectating(spec != 0);
+            break;
+        }
+
+        case RPC_SET_WANTED_LEVEL: {
+            uint8_t level = bs.read_uint8();
+            if (on_wanted_level) on_wanted_level(level);
+            break;
+        }
+
+        case RPC_SET_WEAPON_AMMO: {
+            uint8_t  weapon_id = bs.read_uint8();
+            uint16_t ammo      = bs.read_uint16_le();
+            if (on_weapon_ammo) on_weapon_ammo(weapon_id, ammo);
+            break;
+        }
+
+        case RPC_SET_GRAVITY: {
+            float gravity = bs.read_float_le();
+            if (on_gravity) on_gravity(gravity);
+            break;
+        }
+
+        case RPC_SET_WEATHER: {
+            uint8_t weather_id = bs.read_uint8();
+            if (on_weather) on_weather(weather_id);
+            break;
+        }
+
+        case RPC_SET_PLAYER_SKIN: {
+            int32_t  pid     = bs.read_int32_le();
+            uint32_t skin_id = bs.read_uint32_le();
+            if (on_player_skin) on_player_skin(pid, skin_id);
+            break;
+        }
+
+        case RPC_SET_INTERIOR: {
+            uint8_t interior_id = bs.read_uint8();
+            if (on_set_interior) on_set_interior(interior_id);
+            break;
+        }
+
+        case RPC_WORLD_VEHICLE_ADD: {
+            // NEW_VEHICLE packed struct:
+            // u16 vid | i32 model | f32 x,y,z | f32 angle
+            // | u8 color1 | u8 color2 | f32 health | u8 interior
+            // | u32 door_dmg | u32 panel_dmg | u8 light_dmg | u8 tire_dmg
+            // | u8 add_siren | u8 mods[14] | u8 paintjob
+            // | u32 body_color1 | u32 body_color2 | u8 unk
+            uint16_t vid     = bs.read_uint16_le();
+            int32_t  model   = bs.read_int32_le();
+            float    x       = bs.read_float_le();
+            float    y       = bs.read_float_le();
+            float    z       = bs.read_float_le();
+            float    angle   = bs.read_float_le();
+            uint8_t  color1  = bs.read_uint8();
+            uint8_t  color2  = bs.read_uint8();
+            float    health  = bs.read_float_le();
+            uint8_t  interior = bs.read_uint8();
+            uint32_t door_dmg   = bs.read_uint32_le();
+            uint32_t panel_dmg  = bs.read_uint32_le();
+            uint8_t  light_dmg  = bs.read_uint8();
+            uint8_t  tire_dmg   = bs.read_uint8();
+            uint8_t  add_siren  = bs.read_uint8();
+            uint8_t  mods[14];
+            bs.read_aligned_bytes(mods, 14);
+            uint8_t  paintjob    = bs.read_uint8();
+            uint32_t body_color1 = bs.read_uint32_le();
+            uint32_t body_color2 = bs.read_uint32_le();
+            // u8 unk — ignored
+            if (on_vehicle_streamed_in)
+                on_vehicle_streamed_in(vid, model, x, y, z, angle,
+                                       color1, color2, health, interior,
+                                       door_dmg, panel_dmg, light_dmg, tire_dmg,
+                                       add_siren, paintjob, body_color1, body_color2);
+            break;
+        }
+
+        case RPC_WORLD_VEHICLE_REMOVE: {
+            uint16_t vid = bs.read_uint16_le();
+            if (on_vehicle_streamed_out) on_vehicle_streamed_out(vid);
+            break;
+        }
+
+        case RPC_DEATH_BROADCAST: {
+            uint16_t pid = bs.read_uint16_le();
+            if (on_player_death) on_player_death(pid);
+            break;
+        }
+
         default:
             break;
         }
@@ -526,6 +710,18 @@ void SAMPClient::send_exit_vehicle(uint16_t vehicle_id)
     bs.write_uint16_le(vehicle_id);
     std::vector<uint8_t> payload(bs.data(), bs.data() + bs.num_bytes());
     send_rpc(RPC_EXIT_VEHICLE, payload, RELIABLE_SEQUENCED);
+}
+
+void SAMPClient::send_command(const std::string& text)
+{
+    BitStream bs;
+    uint32_t len = static_cast<uint32_t>(text.size());
+    bs.write_bits(reinterpret_cast<const uint8_t*>(&len), 32, true);
+    if (len > 0)
+        bs.write_aligned_bytes(reinterpret_cast<const uint8_t*>(text.data()),
+                               static_cast<int>(len));
+    std::vector<uint8_t> payload(bs.data(), bs.data() + bs.num_bytes());
+    send_rpc(RPC_SERVER_COMMAND, payload, RELIABLE);
 }
 
 void SAMPClient::process_packet(const InternalPacket& pkt) {
