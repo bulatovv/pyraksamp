@@ -12,6 +12,7 @@ namespace samp {
 // Packet IDs
 constexpr uint8_t ID_INTERNAL_PING                = 6;
 constexpr uint8_t ID_CONNECTED_PONG               = 9;
+constexpr uint8_t ID_TIMESTAMP                    = 40;
 constexpr uint8_t ID_CONNECTION_REQUEST           = 11;
 constexpr uint8_t ID_AUTH_KEY                     = 12;
 constexpr uint8_t ID_RPC                          = 20;
@@ -27,15 +28,32 @@ constexpr uint8_t ID_CONNECTION_REQUEST_ACCEPTED  = 34;
 constexpr uint8_t ID_CONNECTION_BANNED            = 36;
 constexpr uint8_t ID_INVALID_PASSWORD             = 37;
 
-// RPC IDs
-constexpr uint8_t RPC_CLIENT_JOIN      = 25;
+// RPC IDs — server→client (receive)
+constexpr uint8_t RPC_SERVER_JOIN      = 137;
+constexpr uint8_t RPC_SERVER_QUIT      = 138;
 constexpr uint8_t RPC_INIT_GAME        = 139;
+constexpr uint8_t RPC_CONNECTION_REJ   = 130;
+constexpr uint8_t RPC_CHAT             = 101;
+constexpr uint8_t RPC_CLIENT_MESSAGE   = 93;
+constexpr uint8_t RPC_DIALOG_BOX       = 61;
+constexpr uint8_t RPC_GAME_TEXT        = 73;
+constexpr uint8_t RPC_SET_HEALTH       = 14;
+constexpr uint8_t RPC_SET_ARMOUR       = 66;
+constexpr uint8_t RPC_SET_POSITION     = 12;
+constexpr uint8_t RPC_SET_CHECKPOINT   = 107;
+constexpr uint8_t RPC_DISABLE_CHECKPOINT = 37;
+constexpr uint8_t RPC_WORLD_PLAYER_ADD = 32;
+constexpr uint8_t RPC_WORLD_PLAYER_REMOVE = 163;
+
+// RPC IDs — client→server (send)
+constexpr uint8_t RPC_CLIENT_JOIN      = 25;
 constexpr uint8_t RPC_REQUEST_CLASS    = 128;
 constexpr uint8_t RPC_REQUEST_SPAWN    = 129;
 constexpr uint8_t RPC_SPAWN            = 52;
-constexpr uint8_t RPC_CONNECTION_REJ   = 130;
-constexpr uint8_t RPC_SERVER_JOIN      = 137;
-constexpr uint8_t RPC_SERVER_QUIT      = 138;
+constexpr uint8_t RPC_DIALOG_RESPONSE  = 62;
+constexpr uint8_t RPC_DEATH            = 53;
+constexpr uint8_t RPC_ENTER_VEHICLE    = 26;
+constexpr uint8_t RPC_EXIT_VEHICLE     = 154;
 
 constexpr int     NETGAME_VERSION = 4057;
 constexpr uint16_t NETCODE_CONNCOOKIELULZ = 0x6969;
@@ -72,11 +90,49 @@ public:
     bool is_connected()  const { return connected_.load(); }
     int  player_id()     const { return player_id_; }
 
-    // Callbacks (set before connect())
+    // ── Callbacks ─────────────────────────────────────────────────────────────
+    // Connection
     std::function<void()>                                    on_connect;
     std::function<void()>                                    on_disconnect;
+
+    // Raw RPC escape hatch (fired for every RPC after typed callbacks)
     std::function<void(uint8_t, std::vector<uint8_t>)>      on_rpc;
-    std::function<void(int, std::string)>                    on_player_join;  // id, name
+
+    // Player roster
+    std::function<void(int, std::string)>                    on_player_join;   // pid, name
+    std::function<void(int, int)>                            on_player_quit;   // pid, reason
+
+    // Chat
+    std::function<void(int, std::string)>                    on_chat;          // pid, text
+    std::function<void(uint32_t, std::string)>               on_client_message;// color, text
+
+    // Dialogs
+    std::function<void(uint16_t, uint8_t,
+                       std::string, std::string,
+                       std::string, std::string)>            on_dialog;        // id,style,title,btn1,btn2,body
+
+    // HUD
+    std::function<void(int, int, std::string)>               on_game_text;     // style, ms, text
+
+    // Player state
+    std::function<void(float)>                               on_set_health;
+    std::function<void(float)>                               on_set_armour;
+    std::function<void(float, float, float)>                 on_set_position;  // x,y,z
+
+    // World
+    std::function<void(float, float, float, float)>          on_checkpoint;    // x,y,z,size
+    std::function<void()>                                    on_checkpoint_disabled;
+
+    // Stream in/out (proximity)
+    std::function<void(int,int,int,float,float,float,float,uint32_t,int)> on_player_streamed_in;
+    std::function<void(int)>                                 on_player_streamed_out;
+
+    // ── Send helpers ───────────────────────────────────────────────────────────
+    void send_dialog_response(uint16_t dialog_id, uint8_t button,
+                              uint16_t list_item, const std::string& text);
+    void send_death(uint8_t weapon_id = 0, uint16_t killer_id = 0xFFFF);
+    void send_enter_vehicle(uint16_t vehicle_id, bool is_passenger = false);
+    void send_exit_vehicle(uint16_t vehicle_id);
 
 private:
     // ---- Network helpers ----
@@ -127,6 +183,7 @@ private:
     std::atomic<uint16_t> send_msg_num_{0};
     std::mutex            ack_mutex_;
     std::vector<uint16_t> pending_acks_;
+    SplitBuffer           split_buffer_; // reassembly state for split packets
 };
 
 } // namespace samp

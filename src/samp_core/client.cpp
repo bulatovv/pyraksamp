@@ -242,7 +242,7 @@ bool SAMPClient::do_connection_request(double timeout_sec) {
             continue;
         }
 
-        auto result = parse(buf, len);
+        auto result = parse(buf, len, split_buffer_);
         if (!result) continue;
         if (result->is_ack) continue;
 
@@ -308,40 +308,239 @@ void SAMPClient::request_class_and_spawn() {
 }
 
 void SAMPClient::handle_init_game(const uint8_t* /*data*/, int /*len*/) {
-    // We don't need to parse InitGame fully for a PoC.
-    // Just trigger spawn sequence.
-    request_class_and_spawn();
-    connected_ = true;
-
     if (on_connect) on_connect();
+    request_class_and_spawn();
 }
 
 void SAMPClient::handle_rpc(uint8_t rpc_id, const uint8_t* payload, int len) {
-    if (rpc_id == RPC_INIT_GAME) {
-        handle_init_game(payload, len);
-    } else if (rpc_id == RPC_CONNECTION_REJ) {
-        running_ = false;
-    } else if (rpc_id == RPC_SERVER_JOIN && len >= 8) {
-        if (on_player_join) {
-            uint16_t pid; memcpy(&pid, payload, 2);
-            int isNPC = payload[6];
-            int nameLen = payload[7];
+    // Typed dispatch — each case uses BitStream for safe parsing.
+    // All cases fall through to the on_rpc raw callback at the bottom.
+    try {
+        BitStream bs(payload, len);
+
+        switch (rpc_id) {
+
+        case RPC_INIT_GAME:
+            handle_init_game(payload, len);
+            break;
+
+        case RPC_CONNECTION_REJ:
+            running_ = false;
+            break;
+
+        case RPC_SERVER_JOIN: {
+            // u16 pid, i32 unk, u8 isNPC, u8 nameLen, char[nameLen]
+            uint16_t pid  = bs.read_uint16_le();
+            bs.skip_bits(32); // unk
+            bs.read_uint8();  // isNPC
+            uint8_t nlen  = bs.read_uint8();
             std::string name;
-            if (nameLen > 0 && len >= 8 + nameLen)
-                name.assign(reinterpret_cast<const char*>(payload + 8), nameLen);
-            on_player_join(pid, name);
+            if (nlen > 0) {
+                name.resize(nlen);
+                bs.read_aligned_bytes(reinterpret_cast<uint8_t*>(&name[0]), nlen);
+            }
+            if (on_player_join) on_player_join(pid, name);
+            break;
         }
+
+        case RPC_SERVER_QUIT: {
+            // u16 pid, u8 reason
+            uint16_t pid    = bs.read_uint16_le();
+            uint8_t  reason = bs.read_uint8();
+            if (on_player_quit) on_player_quit(pid, reason);
+            break;
+        }
+
+        case RPC_CHAT: {
+            // u16 pid, u8 textLen, char[textLen]
+            uint16_t pid  = bs.read_uint16_le();
+            uint8_t  tlen = bs.read_uint8();
+            std::string text(tlen, '\0');
+            if (tlen > 0)
+                bs.read_aligned_bytes(reinterpret_cast<uint8_t*>(&text[0]), tlen);
+            if (on_chat) on_chat(pid, text);
+            break;
+        }
+
+        case RPC_CLIENT_MESSAGE: {
+            // u32 color, u32 len, char[len]
+            uint32_t color = bs.read_uint32_le();
+            uint32_t mlen  = bs.read_uint32_le();
+            if (mlen > 256) break;
+            std::string text(mlen, '\0');
+            if (mlen > 0)
+                bs.read_aligned_bytes(reinterpret_cast<uint8_t*>(&text[0]),
+                                      static_cast<int>(mlen));
+            if (on_client_message) on_client_message(color, text);
+            break;
+        }
+
+        case RPC_DIALOG_BOX: {
+            // u16 dialogID, u8 style, u8 titleLen, title, u8 btn1Len, btn1,
+            // u8 btn2Len, btn2, DecodeString(body)
+            uint16_t did   = bs.read_uint16_le();
+            uint8_t  style = bs.read_uint8();
+
+            uint8_t tlen = bs.read_uint8();
+            std::string title(tlen, '\0');
+            if (tlen > 0)
+                bs.read_aligned_bytes(reinterpret_cast<uint8_t*>(&title[0]), tlen);
+
+            uint8_t b1len = bs.read_uint8();
+            std::string btn1(b1len, '\0');
+            if (b1len > 0)
+                bs.read_aligned_bytes(reinterpret_cast<uint8_t*>(&btn1[0]), b1len);
+
+            uint8_t b2len = bs.read_uint8();
+            std::string btn2(b2len, '\0');
+            if (b2len > 0)
+                bs.read_aligned_bytes(reinterpret_cast<uint8_t*>(&btn2[0]), b2len);
+
+            std::string body = bs.read_compressed_string(4096);
+
+            if (on_dialog) on_dialog(did, style, title, btn1, btn2, body);
+            break;
+        }
+
+        case RPC_GAME_TEXT: {
+            // i32 type, i32 timeMs, i32 len, char[len]
+            int32_t  type   = bs.read_int32_le();
+            int32_t  timeMs = bs.read_int32_le();
+            int32_t  mlen   = bs.read_int32_le();
+            if (mlen < 0 || mlen > 400) break;
+            std::string text(static_cast<size_t>(mlen), '\0');
+            if (mlen > 0)
+                bs.read_aligned_bytes(reinterpret_cast<uint8_t*>(&text[0]), mlen);
+            if (on_game_text) on_game_text(type, timeMs, text);
+            break;
+        }
+
+        case RPC_SET_HEALTH: {
+            float hp = bs.read_float_le();
+            if (on_set_health) on_set_health(hp);
+            break;
+        }
+
+        case RPC_SET_ARMOUR: {
+            float arm = bs.read_float_le();
+            if (on_set_armour) on_set_armour(arm);
+            break;
+        }
+
+        case RPC_SET_POSITION: {
+            float x = bs.read_float_le();
+            float y = bs.read_float_le();
+            float z = bs.read_float_le();
+            if (on_set_position) on_set_position(x, y, z);
+            break;
+        }
+
+        case RPC_SET_CHECKPOINT: {
+            float x    = bs.read_float_le();
+            float y    = bs.read_float_le();
+            float z    = bs.read_float_le();
+            float size = bs.read_float_le();
+            if (on_checkpoint) on_checkpoint(x, y, z, size);
+            break;
+        }
+
+        case RPC_DISABLE_CHECKPOINT:
+            if (on_checkpoint_disabled) on_checkpoint_disabled();
+            break;
+
+        case RPC_WORLD_PLAYER_ADD: {
+            // u16 pid, u8 team, i32 skin, f32 x,y,z,rot, u32 color, u8 fightStyle
+            uint16_t pid   = bs.read_uint16_le();
+            uint8_t  team  = bs.read_uint8();
+            int32_t  skin  = bs.read_int32_le();
+            float    x     = bs.read_float_le();
+            float    y     = bs.read_float_le();
+            float    z     = bs.read_float_le();
+            float    rot   = bs.read_float_le();
+            uint32_t color = bs.read_uint32_le();
+            uint8_t  fs    = bs.read_uint8();
+            if (on_player_streamed_in)
+                on_player_streamed_in(pid, team, skin, x, y, z, rot, color, fs);
+            break;
+        }
+
+        case RPC_WORLD_PLAYER_REMOVE: {
+            uint16_t pid = bs.read_uint16_le();
+            if (on_player_streamed_out) on_player_streamed_out(pid);
+            break;
+        }
+
+        default:
+            break;
+        }
+    } catch (...) {
+        // Malformed packet — silently ignore; do not crash the receive loop.
     }
 
+    // Always fire the raw escape hatch last so user can intercept anything.
     if (on_rpc) {
         on_rpc(rpc_id, std::vector<uint8_t>(payload, payload + len));
     }
+}
+
+// ─── send helpers ────────────────────────────────────────────────────────────
+
+void SAMPClient::send_dialog_response(uint16_t dialog_id, uint8_t button,
+                                       uint16_t list_item, const std::string& text)
+{
+    BitStream bs;
+    bs.write_uint16_le(dialog_id);
+    uint8_t btn = button;
+    bs.write_bits(&btn, 8, true);
+    bs.write_uint16_le(list_item);
+    uint8_t rlen = static_cast<uint8_t>(text.size());
+    bs.write_bits(&rlen, 8, true);
+    if (rlen > 0)
+        bs.write_aligned_bytes(reinterpret_cast<const uint8_t*>(text.data()), rlen);
+    std::vector<uint8_t> payload(bs.data(), bs.data() + bs.num_bytes());
+    send_rpc(RPC_DIALOG_RESPONSE, payload, RELIABLE_ORDERED);
+}
+
+void SAMPClient::send_death(uint8_t weapon_id, uint16_t killer_id)
+{
+    BitStream bs;
+    bs.write_bits(&weapon_id, 8, true);
+    bs.write_uint16_le(killer_id);
+    std::vector<uint8_t> payload(bs.data(), bs.data() + bs.num_bytes());
+    send_rpc(RPC_DEATH, payload, RELIABLE_ORDERED);
+}
+
+void SAMPClient::send_enter_vehicle(uint16_t vehicle_id, bool is_passenger)
+{
+    BitStream bs;
+    bs.write_uint16_le(vehicle_id);
+    uint8_t pass = is_passenger ? 1 : 0;
+    bs.write_bits(&pass, 8, true);
+    std::vector<uint8_t> payload(bs.data(), bs.data() + bs.num_bytes());
+    send_rpc(RPC_ENTER_VEHICLE, payload, RELIABLE_SEQUENCED);
+}
+
+void SAMPClient::send_exit_vehicle(uint16_t vehicle_id)
+{
+    BitStream bs;
+    bs.write_uint16_le(vehicle_id);
+    std::vector<uint8_t> payload(bs.data(), bs.data() + bs.num_bytes());
+    send_rpc(RPC_EXIT_VEHICLE, payload, RELIABLE_SEQUENCED);
 }
 
 void SAMPClient::process_packet(const InternalPacket& pkt) {
     if (pkt.data.empty()) return;
 
     switch (pkt.data[0]) {
+    case ID_TIMESTAMP: {
+        // Strip [ID_TIMESTAMP(1)][RakNetTime(4)] prefix, then process as normal packet
+        // Format: [0x28][4-byte timestamp][actual_packet_id][...]
+        if (pkt.data.size() < 6) return;
+        InternalPacket stripped = pkt;
+        stripped.data = std::vector<uint8_t>(pkt.data.begin() + 5, pkt.data.end());
+        process_packet(stripped);
+        return;
+    }
     case ID_RPC: {
         if (pkt.data.size() < 2) return;
         BitStream bs(pkt.data.data(), static_cast<int>(pkt.data.size()));
@@ -468,8 +667,9 @@ void SAMPClient::run() {
             continue;
         }
 
-        auto result = parse(buf, len);
-        if (!result || result->is_ack) continue;
+        auto result = parse(buf, len, split_buffer_);
+        if (!result) continue;
+        if (result->is_ack) continue;
 
         for (auto& pkt : result->packets) {
             if (pkt.reliability == RELIABLE || pkt.reliability == RELIABLE_ORDERED) {

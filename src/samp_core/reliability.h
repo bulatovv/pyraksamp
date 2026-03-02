@@ -1,5 +1,7 @@
 #pragma once
 #include <cstdint>
+#include <map>
+#include <unordered_map>
 #include <vector>
 #include <optional>
 
@@ -19,7 +21,23 @@ struct InternalPacket {
     Reliability reliability;
     uint8_t     ordering_channel;
     uint16_t    ordering_index;
-    std::vector<uint8_t> data;
+    std::vector<uint8_t> data;  // empty → ACK-only (for split fragment accounting)
+};
+
+// ── Split-packet reassembly state ────────────────────────────────────────────
+// One SplitFragment entry per in-flight split sequence.
+struct SplitFragment {
+    uint32_t    count;             // total fragments expected
+    Reliability reliability;
+    uint8_t     ordering_channel;
+    uint16_t    ordering_index;
+    std::map<uint32_t, std::vector<uint8_t>> chunks; // index → data
+};
+
+// Per-SAMPClient state for in-flight split sequences.
+// Keyed by the 16-bit splitPacketId from the wire.
+struct SplitBuffer {
+    std::unordered_map<uint16_t, SplitFragment> pending;
 };
 
 // Build a reliability-layer datagram wrapping `data`.
@@ -35,12 +53,13 @@ std::vector<uint8_t> make_packet(
 std::vector<uint8_t> make_ack(const std::vector<uint16_t>& msg_nums);
 
 // Parse a reliability-layer datagram.
+// split_buf is used to reassemble split packets across datagrams.
 // Returns nullopt if the datagram is malformed.
 struct ParseResult {
     bool is_ack;
     std::vector<uint16_t>       acked;    // populated when is_ack == true
     std::vector<InternalPacket> packets;  // populated when is_ack == false
 };
-std::optional<ParseResult> parse(const uint8_t* data, int len);
+std::optional<ParseResult> parse(const uint8_t* data, int len, SplitBuffer& split_buf);
 
 } // namespace samp

@@ -2,7 +2,92 @@
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <string>
 #include <vector>
+
+// ─── Huffman decoder (RakNet StringCompressor, language ID 0) ────────────────
+//
+// Replicates RakNet's DS_HuffmanEncodingTree built from englishCharacterFrequencies.
+// Insertion-sort tie-breaking: insert BEFORE first element with weight >= new node.
+// Decode: 0-bit → left child, 1-bit → right child; emit value at leaf, restart.
+// Called by BitStream::read_compressed_string() to decode dialog bodies, etc.
+
+struct HuffNode {
+    int16_t  left, right; // child indices into 511-node pool; -1 = leaf
+    uint8_t  value;       // decoded byte (leaf only)
+    uint32_t weight;      // used only during tree construction
+};
+
+// Build the Huffman tree into pool[0..510] and return the root index.
+// pool[0..255] are leaves (value==index), pool[256..510] are internal nodes.
+inline int huffman_build(HuffNode pool[511]) {
+    // englishCharacterFrequencies[256] from StringCompressor.cpp (unchanged)
+    static const uint32_t freq[256] = {
+        0,0,0,0,0,0,0,0,0,0,722,0,0,2,0,0,     // 0-15
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,         // 16-31
+        11084,58,63,1,0,31,0,317,64,64,44,0,695,62,980,266, // 32-47
+        69,67,56,7,73,3,14,2,69,1,167,9,1,2,25,94,  // 48-63
+        0,195,139,34,96,48,103,56,125,653,21,5,23,64,85,44, // 64-79
+        34,7,92,76,147,12,14,57,15,39,15,1,1,1,2,3,  // 80-95
+        0,3611,845,1077,1884,5870,841,1057,2501,3212,164,531,2019,1330,3056,4037, // 96-111
+        848,47,2586,2919,4771,1707,535,1106,152,1243,100,0,2,0,10,0, // 112-127
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 128-143
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 144-159
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 160-175
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 176-191
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 192-207
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 208-223
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 224-239
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 240-255
+    };
+
+    // Initialise leaves
+    for (int i = 0; i < 256; i++) {
+        pool[i].left  = -1;
+        pool[i].right = -1;
+        pool[i].value = static_cast<uint8_t>(i);
+        pool[i].weight = (freq[i] != 0) ? freq[i] : 1; // 0-weight is illegal in RakNet
+    }
+
+    // Build sorted list with insertion sort.
+    // Insert BEFORE first element whose weight >= the new node's weight.
+    // This exactly replicates RakNet's InsertNodeIntoSortedList logic.
+    std::vector<int> sorted;
+    sorted.reserve(512);
+    for (int i = 0; i < 256; i++) {
+        int pos = 0;
+        while (pos < static_cast<int>(sorted.size()) &&
+               pool[sorted[pos]].weight < pool[i].weight)
+            ++pos;
+        sorted.insert(sorted.begin() + pos, i);
+    }
+
+    // Merge phase: pop two smallest, create parent, re-insert
+    int next = 256;
+    while (sorted.size() > 1) {
+        int lesser  = sorted[0];
+        int greater = sorted[1];
+        sorted.erase(sorted.begin(), sorted.begin() + 2);
+
+        int parent = next++;
+        pool[parent].left   = static_cast<int16_t>(lesser);
+        pool[parent].right  = static_cast<int16_t>(greater);
+        pool[parent].value  = 0;
+        pool[parent].weight = pool[lesser].weight + pool[greater].weight;
+
+        int pos = 0;
+        while (pos < static_cast<int>(sorted.size()) &&
+               pool[sorted[pos]].weight < pool[parent].weight)
+            ++pos;
+        sorted.insert(sorted.begin() + pos, parent);
+    }
+
+    return sorted[0]; // root index
+}
+
+// Thread-safe singleton: built once on first call (C++11 magic statics).
+struct HuffTree { HuffNode pool[511]; int root; HuffTree() { root = huffman_build(pool); } };
+inline const HuffTree& huffman_tree() { static HuffTree t; return t; }
 
 // Minimal RakNet-compatible BitStream.
 // Bits are stored MSB-first within each byte (bit 0 of stream = MSB of byte 0).
@@ -224,6 +309,34 @@ public:
     }
 
     void skip_bits(int count) { rpos_ += count; }
+
+    // Decode a RakNet StringCompressor string (Huffman + compressed uint16 length).
+    // Wire format: WriteCompressed(uint16 bitLen) followed by bitLen Huffman-coded bits.
+    // max_chars caps output length (not counting the null the caller may add).
+    std::string read_compressed_string(int max_chars = 256) {
+        uint16_t bit_len = read_compressed_uint16();
+        if (bit_len == 0) return {};
+        if (bits_remaining() < static_cast<int>(bit_len))
+            throw std::runtime_error("BitStream underflow in read_compressed_string");
+
+        const HuffTree& ht   = huffman_tree();
+        const HuffNode* pool = ht.pool;
+        int root    = ht.root;
+        int current = root;
+
+        std::string result;
+        result.reserve(std::min(max_chars, 64));
+
+        for (int i = 0; i < static_cast<int>(bit_len); i++) {
+            current = (read_bit() == 0) ? pool[current].left : pool[current].right;
+            if (pool[current].left == -1) { // leaf
+                if (static_cast<int>(result.size()) < max_chars - 1)
+                    result += static_cast<char>(pool[current].value);
+                current = root;
+            }
+        }
+        return result;
+    }
 
     // ---- Accessors ----
     const uint8_t* data()    const { return buf_.data(); }

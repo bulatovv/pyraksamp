@@ -42,7 +42,7 @@ std::vector<uint8_t> make_ack(const std::vector<uint16_t>& msg_nums) {
     return std::vector<uint8_t>(bs.data(), bs.data() + bs.num_bytes());
 }
 
-std::optional<ParseResult> parse(const uint8_t* data, int len) {
+std::optional<ParseResult> parse(const uint8_t* data, int len, SplitBuffer& split_buf) {
     if (len == 0) return std::nullopt;
 
     BitStream bs(data, len);
@@ -94,14 +94,48 @@ std::optional<ParseResult> parse(const uint8_t* data, int len) {
 
             bool is_split = bs.read_bool();
             if (is_split) {
-                // Skip: splitPacketId (uint16) + index (compressed uint32) + count (compressed uint32) + data
-                bs.read_uint16_le();
-                bs.read_compressed_uint32();
-                bs.read_compressed_uint32();
-                uint16_t data_bits = bs.read_compressed_uint16();
-                int data_bytes = (static_cast<int>(data_bits) + 7) / 8;
-                std::vector<uint8_t> dummy(data_bytes);
-                bs.read_aligned_bytes(dummy.data(), data_bytes);
+                uint16_t split_id   = bs.read_uint16_le();
+                uint32_t frag_index = bs.read_compressed_uint32();
+                uint32_t frag_count = bs.read_compressed_uint32();
+                uint16_t data_bits  = bs.read_compressed_uint16();
+                int      data_bytes = (static_cast<int>(data_bits) + 7) / 8;
+                std::vector<uint8_t> chunk(data_bytes);
+                if (data_bytes > 0)
+                    bs.read_aligned_bytes(chunk.data(), data_bytes);
+
+                // Emit an ACK-only packet so the caller ACKs this fragment's msg_num.
+                InternalPacket frag_ack;
+                frag_ack.msg_num          = pkt.msg_num;
+                frag_ack.reliability      = pkt.reliability;
+                frag_ack.ordering_channel = pkt.ordering_channel;
+                frag_ack.ordering_index   = pkt.ordering_index;
+                // data is empty → process_packet skips it, but msg_num gets ACK'd
+                result.packets.push_back(frag_ack);
+
+                // Buffer the fragment
+                auto& frag = split_buf.pending[split_id];
+                if (frag.chunks.empty()) {
+                    frag.count             = frag_count;
+                    frag.reliability       = pkt.reliability;
+                    frag.ordering_channel  = pkt.ordering_channel;
+                    frag.ordering_index    = pkt.ordering_index;
+                }
+                frag.chunks[frag_index] = std::move(chunk);
+
+                // When all fragments arrive, reassemble and emit
+                if (frag.chunks.size() == frag.count) {
+                    InternalPacket assembled;
+                    assembled.msg_num          = 0;
+                    assembled.reliability      = UNRELIABLE; // already ACK'd per-fragment
+                    assembled.ordering_channel = frag.ordering_channel;
+                    assembled.ordering_index   = frag.ordering_index;
+                    for (uint32_t i = 0; i < frag.count; ++i) {
+                        auto& c = frag.chunks[i];
+                        assembled.data.insert(assembled.data.end(), c.begin(), c.end());
+                    }
+                    result.packets.push_back(std::move(assembled));
+                    split_buf.pending.erase(split_id);
+                }
                 continue;
             }
 
