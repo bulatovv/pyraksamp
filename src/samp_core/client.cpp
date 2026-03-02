@@ -7,7 +7,6 @@
 #include <cerrno>
 #include <chrono>
 #include <cstring>
-#include <ctime>
 #include <netdb.h>
 #include <stdexcept>
 #include <sys/socket.h>
@@ -180,7 +179,6 @@ void SAMPClient::handle_connection_accepted(const uint8_t* data, int len) {
         uint16_t p = port_;
         memcpy(nic.data() + 5, &p, 2);           // server port (LE)
         send_reliability_pkt(nic, RELIABLE);
-        fprintf(stderr, "[cj] sent ID_NEW_INCOMING_CONNECTION\n");
     }
 
     send_client_join();
@@ -219,12 +217,6 @@ void SAMPClient::send_client_join() {
     rpc_bs.write_bits(payload.data(), static_cast<int>(payload.size() * 8), false);
 
     std::vector<uint8_t> rpc_pkt(rpc_bs.data(), rpc_bs.data() + rpc_bs.num_bytes());
-    fprintf(stderr, "[cj] ClientJoin RPC len=%d: ", (int)rpc_pkt.size());
-    for (int i = 0; i < std::min((int)rpc_pkt.size(), 32); i++)
-        fprintf(stderr, "%02x ", rpc_pkt[i]);
-    fprintf(stderr, "...\n");
-    fprintf(stderr, "[cj] payload len=%d ch=0x%08x pid=%d\n",
-            (int)payload.size(), challenge_resp, player_id_);
     send_reliability_pkt(rpc_pkt, RELIABLE);
 }
 
@@ -239,15 +231,10 @@ bool SAMPClient::do_connection_request(double timeout_sec) {
     uint8_t buf[2048];
     int     len = 0;
     auto    deadline = now_sec() + timeout_sec;
-    int dcr_pkt = 0;
-
     while (now_sec() < deadline) {
         double remaining = deadline - now_sec();
         if (!recv_with_timeout(sock_fd_, buf, sizeof(buf), server_ip_, len, std::min(remaining, 0.5)))
             continue;
-
-        ++dcr_pkt;
-        fprintf(stderr, "[dcr] pkt#%d len=%d id=0x%02x\n", dcr_pkt, len, buf[0]);
 
         // Try to parse as raw auth key (sometimes sent before reliability layer)
         if (len >= 2 && buf[0] == ID_AUTH_KEY) {
@@ -256,22 +243,10 @@ bool SAMPClient::do_connection_request(double timeout_sec) {
         }
 
         auto result = parse(buf, len);
-        if (!result) {
-            fprintf(stderr, "[dcr] parse failed pkt#%d\n", dcr_pkt);
-            continue;
-        }
+        if (!result) continue;
+        if (result->is_ack) continue;
 
-        if (result->is_ack) {
-            fprintf(stderr, "[dcr] ACK pkt#%d acked=%zu\n", dcr_pkt, result->acked.size());
-            continue;
-        }
-
-        fprintf(stderr, "[dcr] data pkt#%d: %zu internal packets\n", dcr_pkt, result->packets.size());
         for (auto& pkt : result->packets) {
-            fprintf(stderr, "  -> msg_num=%d rel=%d data_len=%zu id=0x%02x\n",
-                    pkt.msg_num, (int)pkt.reliability,
-                    pkt.data.size(), pkt.data.empty() ? 0 : pkt.data[0]);
-            // ACK reliable packets
             if (pkt.reliability == RELIABLE || pkt.reliability == RELIABLE_ORDERED) {
                 std::lock_guard<std::mutex> lk(ack_mutex_);
                 pending_acks_.push_back(pkt.msg_num);
@@ -287,13 +262,11 @@ bool SAMPClient::do_connection_request(double timeout_sec) {
             case ID_CONNECTION_REQUEST_ACCEPTED:
                 handle_connection_accepted(pkt.data.data(), static_cast<int>(pkt.data.size()));
                 connected_ = true;
-                fprintf(stderr, "[dcr] ConnectionAccepted! player_id=%d\n", player_id_);
                 return true;
             case ID_CONNECTION_BANNED:
             case ID_INVALID_PASSWORD:
             case ID_NO_FREE_INCOMING_CONNECTIONS:
             case ID_CONNECTION_ATTEMPT_FAILED:
-                fprintf(stderr, "[dcr] Connection REJECTED id=0x%02x\n", pkt.data[0]);
                 return false;
             }
         }
@@ -344,7 +317,6 @@ void SAMPClient::handle_init_game(const uint8_t* /*data*/, int /*len*/) {
 }
 
 void SAMPClient::handle_rpc(uint8_t rpc_id, const uint8_t* payload, int len) {
-    fprintf(stderr, "[rpc] id=%d (0x%02x) payload_len=%d\n", rpc_id, rpc_id, len);
     if (rpc_id == RPC_INIT_GAME) {
         handle_init_game(payload, len);
     } else if (rpc_id == RPC_CONNECTION_REJ) {
@@ -381,18 +353,14 @@ void SAMPClient::process_packet(const InternalPacket& pkt) {
             rpc_id = bs.read_uint8();
             bit_len = bs.read_compressed_uint32();
             byte_len = (static_cast<int>(bit_len) + 7) / 8;
-        } catch (const std::exception& e) {
-            fprintf(stderr, "[rpc] parse header failed: %s (data_len=%zu)\n",
-                    e.what(), pkt.data.size());
+        } catch (...) {
             return;
         }
         std::vector<uint8_t> payload(byte_len);
         try {
             if (byte_len > 0)
                 bs.read_bits(payload.data(), static_cast<int>(bit_len), false);
-        } catch (const std::exception& e) {
-            fprintf(stderr, "[rpc] read payload failed rpc_id=%d bit_len=%u: %s\n",
-                    rpc_id, bit_len, e.what());
+        } catch (...) {
             return;
         }
         handle_rpc(rpc_id, payload.data(), byte_len);
@@ -476,7 +444,6 @@ void SAMPClient::run() {
     running_ = true;
     double last_keepalive = now_sec();
     double last_ack_flush = now_sec();
-    int total_pkts = 0;
 
     while (running_) {
         double n = now_sec();
@@ -495,9 +462,6 @@ void SAMPClient::run() {
         if (!recv_with_timeout(sock_fd_, buf, sizeof(buf), server_ip_, len, 0.1))
             continue;
 
-        ++total_pkts;
-        fprintf(stderr, "[run] pkt#%d len=%d id=0x%02x\n", total_pkts, len, buf[0]);
-
         // Raw auth key (before reliability layer)
         if (len >= 2 && buf[0] == ID_AUTH_KEY) {
             handle_auth_key(buf, len);
@@ -505,25 +469,9 @@ void SAMPClient::run() {
         }
 
         auto result = parse(buf, len);
-        if (!result) {
-            fprintf(stderr, "[run] parse failed for pkt#%d\n", total_pkts);
-            continue;
-        }
-        if (result->is_ack) {
-            fprintf(stderr, "[run] pkt#%d is ACK, acked=%zu:", total_pkts, result->acked.size());
-            for (auto n : result->acked) fprintf(stderr, " %d", (int)n);
-            fprintf(stderr, "\n");
-            continue;
-        }
+        if (!result || result->is_ack) continue;
 
-        fprintf(stderr, "[run] pkt#%d has %zu internal packets\n", total_pkts, result->packets.size());
         for (auto& pkt : result->packets) {
-            fprintf(stderr, "  -> msg_num=%d rel=%d data_len=%zu id=0x%02x hex=",
-                    pkt.msg_num, (int)pkt.reliability,
-                    pkt.data.size(), pkt.data.empty() ? 0 : pkt.data[0]);
-            for (int i = 0; i < std::min((int)pkt.data.size(), 16); i++)
-                fprintf(stderr, "%02x ", pkt.data[i]);
-            fprintf(stderr, "\n");
             if (pkt.reliability == RELIABLE || pkt.reliability == RELIABLE_ORDERED) {
                 std::lock_guard<std::mutex> lk(ack_mutex_);
                 pending_acks_.push_back(pkt.msg_num);

@@ -93,6 +93,7 @@ public:
 
     // WriteCompressed for uint32 (matches RakNet's WriteCompressed<unsigned int>).
     // Writes 1 bit per zero high byte, then 0 bit + remaining bytes for the first non-zero high byte.
+    // For the last (lowest) byte: if upper nibble is 0, writes nibble flag (1) + 4 bits; else writes nibble flag (0) + 8 bits.
     void write_compressed_uint32(uint32_t v) {
         uint8_t b[4]; memcpy(b, &v, 4); // little-endian bytes
         for (int cur = 3; cur > 0; --cur) {
@@ -104,7 +105,14 @@ public:
                 return;
             }
         }
-        write_bits(b, 8, true); // just the lowest byte
+        // Last byte: nibble-level compression matching RakNet
+        if ((b[0] & 0xF0) == 0) {
+            write_bit(1);            // nibble flag: upper nibble is 0
+            write_bits(b, 4, true);  // write only lower 4 bits
+        } else {
+            write_bit(0);
+            write_bits(b, 8, true);  // full byte
+        }
     }
 
     // Align write position to byte boundary, then write raw bytes
@@ -186,6 +194,7 @@ public:
     }
 
     // ReadCompressed for uint32 (matches RakNet's ReadCompressed<unsigned int>).
+    // For the last (lowest) byte: reads nibble flag; if true, reads 4 bits; else reads 8 bits.
     uint32_t read_compressed_uint32() {
         uint32_t v = 0;
         uint8_t* b = reinterpret_cast<uint8_t*>(&v);
@@ -197,7 +206,13 @@ public:
                 return v;
             }
         }
-        read_bits(b, 8, true);     // just lowest byte
+        // Last byte: nibble-level compression matching RakNet
+        bool nibble_flag = read_bit();
+        if (nibble_flag) {
+            read_bits(b, 4, true); // upper nibble is 0, read only lower 4 bits
+        } else {
+            read_bits(b, 8, true); // full byte
+        }
         return v;
     }
 

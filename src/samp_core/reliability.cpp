@@ -1,6 +1,5 @@
 #include "reliability.h"
 #include "bitstream.h"
-#include <algorithm>
 
 namespace samp {
 
@@ -95,16 +94,14 @@ std::optional<ParseResult> parse(const uint8_t* data, int len) {
 
             bool is_split = bs.read_bool();
             if (is_split) {
-                // splitPacketId (uint16) + splitPacketIndex (compressed uint32) + splitPacketCount (compressed uint32)
-                uint16_t split_id  = bs.read_uint16_le();
-                uint32_t split_idx = bs.read_compressed_uint32();
-                uint32_t split_cnt = bs.read_compressed_uint32();
+                // Skip: splitPacketId (uint16) + index (compressed uint32) + count (compressed uint32) + data
+                bs.read_uint16_le();
+                bs.read_compressed_uint32();
+                bs.read_compressed_uint32();
                 uint16_t data_bits = bs.read_compressed_uint16();
                 int data_bytes = (static_cast<int>(data_bits) + 7) / 8;
                 std::vector<uint8_t> dummy(data_bytes);
                 bs.read_aligned_bytes(dummy.data(), data_bytes);
-                fprintf(stderr, "[parse] SPLIT msg_num=%d split_id=%d idx=%u/%u data_bits=%d\n",
-                        (int)pkt.msg_num, (int)split_id, split_idx, split_cnt, (int)data_bits);
                 continue;
             }
 
