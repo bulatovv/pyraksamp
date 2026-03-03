@@ -17,10 +17,21 @@ build-backend = "scikit_build_core.build"
 cmake.build-type = "Release"
 wheel.packages = ["src/pyraksamp"]
 
+[tool.scikit-build.cmake.define]
+SAMP_BUILD_TESTS = "ON"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
 [tool.uv]
 cache-keys = [
     { file = "pyproject.toml" },
     { file = "CMakeLists.txt" },
     { file = "src/**/*.cpp" },
     { file = "src/**/*.h" },
+    { file = "tests/**/*.cpp" },
+    { file = "src/**/*.rs" },
+    { file = "src/samp_rust/Cargo.toml" },
 ]

@@ -1,7 +1,5 @@
 #pragma once
 #include <cstdint>
-#include <map>
-#include <unordered_map>
 #include <vector>
 #include <optional>
 
@@ -21,23 +19,17 @@ struct InternalPacket {
     Reliability reliability;
     uint8_t     ordering_channel;
     uint16_t    ordering_index;
-    std::vector<uint8_t> data;  // empty → ACK-only (for split fragment accounting)
-};
-
-// ── Split-packet reassembly state ────────────────────────────────────────────
-// One SplitFragment entry per in-flight split sequence.
-struct SplitFragment {
-    uint32_t    count;             // total fragments expected
-    Reliability reliability;
-    uint8_t     ordering_channel;
-    uint16_t    ordering_index;
-    std::map<uint32_t, std::vector<uint8_t>> chunks; // index → data
+    std::vector<uint8_t> data;  // empty → ACK-only placeholder (split fragment)
 };
 
 // Per-SAMPClient state for in-flight split sequences.
-// Keyed by the 16-bit splitPacketId from the wire.
+// Internally backed by a Rust SplitBuffer via opaque handle.
 struct SplitBuffer {
-    std::unordered_map<uint16_t, SplitFragment> pending;
+    void* rust_handle;
+    SplitBuffer();
+    ~SplitBuffer();
+    SplitBuffer(const SplitBuffer&) = delete;
+    SplitBuffer& operator=(const SplitBuffer&) = delete;
 };
 
 // Build a reliability-layer datagram wrapping `data`.
