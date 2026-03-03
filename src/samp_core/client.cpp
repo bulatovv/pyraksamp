@@ -86,6 +86,10 @@ void SAMPClient::send_reliability_pkt(const std::vector<uint8_t>& data,
                                        Reliability rel, uint8_t oc, uint16_t oi)
 {
     uint16_t num = send_msg_num_++;
+    if (rel == UNRELIABLE_SEQUENCED ||
+        rel == RELIABLE_ORDERED     ||
+        rel == RELIABLE_SEQUENCED)
+        oi = ordering_idx_++;
     auto pkt = make_packet(data.data(), static_cast<int>(data.size()), num, rel, oc, oi);
     send_encrypted(pkt.data(), static_cast<int>(pkt.size()));
 }
