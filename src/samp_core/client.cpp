@@ -787,34 +787,31 @@ void SAMPClient::process_packet(const InternalPacket& pkt) {
 }
 
 void SAMPClient::send_keepalive() {
-    // Minimal on-foot sync: just booleans/zeros to satisfy the server
-    BitStream bs;
-    bs.write_uint8(207);  // ID_PLAYER_SYNC
-    bs.write_bool(false); // bHasLR
-    bs.write_bool(false); // bHasUD
-    bs.write_uint16_le(0); // wKeys
-    // vecPos (3 floats)
-    float zero = 0.0f; float ground = 3.0f;
-    bs.write_bits(reinterpret_cast<uint8_t*>(&zero),   32, true);
-    bs.write_bits(reinterpret_cast<uint8_t*>(&zero),   32, true);
-    bs.write_bits(reinterpret_cast<uint8_t*>(&ground), 32, true);
-    // quat (4 floats, identity)
-    bs.write_bits(reinterpret_cast<uint8_t*>(&zero), 32, true);
-    bs.write_bits(reinterpret_cast<uint8_t*>(&zero), 32, true);
-    bs.write_bits(reinterpret_cast<uint8_t*>(&zero), 32, true);
-    float one = 1.0f;
-    bs.write_bits(reinterpret_cast<uint8_t*>(&one),  32, true);
-    bs.write_uint8(0xF0); // health=100, armour=0
-    bs.write_uint8(0);    // weapon
-    bs.write_uint8(0);    // special action
-    bs.write_bits(reinterpret_cast<uint8_t*>(&zero), 32, true); // moveSpeed x
-    bs.write_bits(reinterpret_cast<uint8_t*>(&zero), 32, true); // moveSpeed y
-    bs.write_bits(reinterpret_cast<uint8_t*>(&zero), 32, true); // moveSpeed z
-    bs.write_bool(false); // bHasSurfInfo
-    bs.write_bool(false); // bHasAnim
+    // Client→server on-foot sync: ID_PLAYER_SYNC + raw ONFOOT_SYNC_DATA (#pragma pack(1), 68 bytes)
+    // Reference: localplayer.cpp SendOnFootFullSyncData, sent as UNRELIABLE_SEQUENCED
+    // Struct layout (common.h): lrAnalog(u16), udAnalog(u16), wKeys(u16),
+    //   vecPos(3f), fQuaternion(4f), health(u8), armour(u8), weapon(u8), specialAction(u8),
+    //   moveSpeed(3f), surfOffsets(3f), wSurfInfo(u16), animID(i32) = 68 bytes
+    struct __attribute__((packed)) OnFootData {
+        uint16_t lrAnalog       = 0;
+        uint16_t udAnalog       = 0;
+        uint16_t wKeys          = 0;
+        float    vecPos[3]      = {0.0f, 0.0f, 3.0f};
+        float    fQuaternion[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        uint8_t  byteHealth     = 100;
+        uint8_t  byteArmour     = 0;
+        uint8_t  weapon         = 0;
+        uint8_t  specialAction  = 0;
+        float    moveSpeed[3]   = {0.0f, 0.0f, 0.0f};
+        float    surfOffsets[3] = {0.0f, 0.0f, 0.0f};
+        uint16_t wSurfInfo      = 0xFFFF; // no surface
+        int32_t  animID         = 0;
+    } data;
 
-    std::vector<uint8_t> pkt(bs.data(), bs.data() + bs.num_bytes());
-    send_reliability_pkt(pkt, UNRELIABLE);
+    std::vector<uint8_t> pkt(1 + sizeof(data));
+    pkt[0] = 207; // ID_PLAYER_SYNC
+    memcpy(pkt.data() + 1, &data, sizeof(data));
+    send_reliability_pkt(pkt, UNRELIABLE_SEQUENCED);
 }
 
 // ─── public API ──────────────────────────────────────────────────────────────
@@ -839,6 +836,7 @@ void SAMPClient::run() {
     running_ = true;
     double last_keepalive = now_sec();
     double last_ack_flush = now_sec();
+    double last_scores    = now_sec();
 
     while (running_) {
         double n = now_sec();
@@ -851,10 +849,14 @@ void SAMPClient::run() {
             send_keepalive();
             last_keepalive = n;
         }
+        if (n - last_scores > 3.0) {
+            send_rpc(RPC_UPDATE_SCORES, {}, RELIABLE);
+            last_scores = n;
+        }
 
         uint8_t buf[2048];
         int     len = 0;
-        if (!recv_with_timeout(sock_fd_, buf, sizeof(buf), server_ip_, len, 0.1))
+        if (!recv_with_timeout(sock_fd_, buf, sizeof(buf), server_ip_, len, 0.03))
             continue;
 
         // Raw auth key (before reliability layer)

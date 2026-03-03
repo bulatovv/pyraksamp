@@ -76,6 +76,7 @@ constexpr uint8_t RPC_DEATH            = 53;
 constexpr uint8_t RPC_ENTER_VEHICLE    = 26;
 constexpr uint8_t RPC_EXIT_VEHICLE     = 154;
 constexpr uint8_t RPC_SERVER_COMMAND   = 50;
+constexpr uint8_t RPC_UPDATE_SCORES    = 155; // UpdateScoresPingsIPs — empty payload, every 3s
 
 constexpr int     NETGAME_VERSION = 4057;
 constexpr uint16_t NETCODE_CONNCOOKIELULZ = 0x6969;
