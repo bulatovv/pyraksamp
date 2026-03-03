@@ -15,13 +15,13 @@ build-backend = "maturin"
 
 [tool.maturin]
 module-name   = "pyraksamp._core"
-manifest-path = "src/samp_rust/samp_core/Cargo.toml"
+manifest-path = "src/pyraksamp_core/samp_core/Cargo.toml"
 python-source = "src"
 
 [tool.uv]
 cache-keys = [
     { file = "pyproject.toml" },
     { file = "src/**/*.rs" },
-    { file = "src/samp_rust/Cargo.toml" },
-    { file = "src/samp_rust/samp_core/Cargo.toml" },
+    { file = "src/pyraksamp_core/Cargo.toml" },
+    { file = "src/pyraksamp_core/samp_core/Cargo.toml" },
 ]

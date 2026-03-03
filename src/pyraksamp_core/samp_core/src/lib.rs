@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use pyo3::prelude::*;
-use samp_rust::client::SampClient;
+use pyraksamp_core::client::SampClient;
 
 // ── PySAMPClient ──────────────────────────────────────────────────────────────
 

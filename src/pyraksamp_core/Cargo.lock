@@ -129,6 +129,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pyraksamp_core"
+version = "0.1.0"
+
+[[package]]
 name = "quote"
 version = "1.0.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -148,12 +152,8 @@ name = "samp_core"
 version = "0.1.0"
 dependencies = [
  "pyo3",
- "samp_rust",
+ "pyraksamp_core",
 ]
-
-[[package]]
-name = "samp_rust"
-version = "0.1.0"
 
 [[package]]
 name = "syn"

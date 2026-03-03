@@ -8,5 +8,5 @@ name = "samp_core"
 crate-type = ["cdylib"]
 
 [dependencies]
-samp_rust = { path = ".." }
+pyraksamp_core = { path = ".." }
 pyo3 = { version = "0.23", features = ["extension-module", "abi3-py37"] }
