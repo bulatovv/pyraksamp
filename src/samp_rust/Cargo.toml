@@ -1,9 +1,13 @@
+[workspace]
+members = ["samp_core"]
+resolver = "2"
+
 [package]
 name = "samp_rust"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["rlib"]
 
 [dependencies]

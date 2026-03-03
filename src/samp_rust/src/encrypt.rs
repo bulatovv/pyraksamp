@@ -561,48 +561,210 @@ pub fn auth_response(challenge: &str) -> Option<&'static str> {
     None
 }
 
-// ── C FFI exports ─────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-/// Encrypts `data[0..len]` with `port`, writing result to `out[0..len+1]`.
-/// Caller must provide out buffer of at least len+1 bytes.
-#[no_mangle]
-pub unsafe extern "C" fn samp_encrypt(
-    data: *const u8, len: usize, port: u16,
-    out: *mut u8,
-) {
-    let input = std::slice::from_raw_parts(data, len);
-    let result = encrypt(input, port);
-    let out_slice = std::slice::from_raw_parts_mut(out, result.len());
-    out_slice.copy_from_slice(&result);
-}
+    #[test]
+    fn empty_payload() {
+        // No data bytes → only the checksum byte (0) in output
+        assert_eq!(encrypt(&[], 7777), vec![0u8]);
+    }
 
-// Build a HashMap<challenge, CString(response)> once so every returned pointer
-// is properly null-terminated and lives for the lifetime of the process.
-static AUTH_CSTR_MAP: std::sync::OnceLock<
-    std::collections::HashMap<&'static str, std::ffi::CString>
-> = std::sync::OnceLock::new();
+    #[test]
+    fn output_length() {
+        for len in [0, 1, 2, 10, 255] {
+            assert_eq!(encrypt(&vec![0u8; len], 7777).len(), len + 1);
+        }
+    }
 
-fn auth_cstr_map() -> &'static std::collections::HashMap<&'static str, std::ffi::CString> {
-    AUTH_CSTR_MAP.get_or_init(|| {
-        AUTH_TABLE.iter()
-            .map(|&(k, v)| (k, std::ffi::CString::new(v).unwrap()))
-            .collect()
-    })
-}
+    #[test]
+    fn known_even_byte() {
+        // ENCR_TABLE[0] = 0x27; index 0 is even → no port XOR applied
+        let out = encrypt(&[0u8], 7777);
+        assert_eq!(out[1], 0x27);
+    }
 
-/// Looks up the auth response for a null-terminated challenge string.
-/// Returns a pointer to a static null-terminated C string, or NULL if not found.
-#[no_mangle]
-pub unsafe extern "C" fn samp_auth_response(
-    challenge: *const std::ffi::c_char,
-) -> *const std::ffi::c_char {
-    let cstr = std::ffi::CStr::from_ptr(challenge);
-    let s = match cstr.to_str() {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null(),
-    };
-    match auth_cstr_map().get(s) {
-        Some(cstr) => cstr.as_ptr(),
-        None => std::ptr::null(),
+    #[test]
+    fn checksum_formula() {
+        // out[0] = XOR of (plaintext[i] & 0xAA) for all i
+        let out = encrypt(&[0xFFu8], 7777);
+        assert_eq!(out[0], 0xAA); // 0xFF & 0xAA = 0xAA
+    }
+
+    #[test]
+    fn port_mask_applied_to_odd_bytes() {
+        // Input index 1 → out[2], odd → XOR with port_mask = (port ^ 0xCC) as u8
+        // ENCR_TABLE[0] = 0x27; port 7777 = 0x1E61 → port_mask = (0x1E61 ^ 0xCC) as u8 = 0xAD
+        let out = encrypt(&[0u8, 0u8], 7777);
+        assert_eq!(out[2], 0x27u8 ^ 0xAD);
+    }
+
+    #[test]
+    fn deterministic() {
+        let data = b"hello";
+        assert_eq!(encrypt(data, 7777), encrypt(data, 7777));
+    }
+
+    #[test]
+    fn different_ports_differ_at_odd_indices_only() {
+        let data = b"AB";
+        let out1 = encrypt(data, 7777);
+        let out2 = encrypt(data, 7778);
+        // Even-indexed (out[1], input index 0): no port XOR → identical
+        assert_eq!(out1[1], out2[1]);
+        // Odd-indexed (out[2], input index 1): differs by XOR of the two port masks
+        let mask_diff = ((7777u16 ^ 0xCC) ^ (7778u16 ^ 0xCC)) as u8;
+        assert_eq!(out1[2] ^ out2[2], mask_diff);
+    }
+
+    #[test]
+    fn auth_response_known_entry() {
+        assert_eq!(
+            auth_response("6C407EC29DE59E2"),
+            Some("D9412F235647BAA582089C6F66817F8B8811C057"),
+        );
+    }
+
+    #[test]
+    fn auth_response_unknown() {
+        assert_eq!(auth_response("NOTAKEY"), None);
+    }
+
+    #[test]
+    fn auth_response_case_sensitive() {
+        // Table keys are uppercase hex; lowercase must not match
+        assert_eq!(auth_response("6c407ec29de59e2"), None);
+    }
+
+    // ── Reference implementation ──────────────────────────────────────────────
+
+    fn reference_encrypt(data: &[u8], port: u16) -> Vec<u8> {
+        let port_mask = (port ^ 0xCC) as u8;
+        let mut checksum: u8 = 0;
+        let mut out = vec![0u8; data.len() + 1];
+        for (i, &b) in data.iter().enumerate() {
+            checksum ^= b & 0xAA;
+            let mut enc = ENCR_TABLE[b as usize];
+            if i & 1 != 0 { enc ^= port_mask; }
+            out[i + 1] = enc;
+        }
+        out[0] = checksum;
+        out
+    }
+
+    #[test]
+    fn single_byte_even_index_no_port_mask() {
+        // Index 0 is even → port never affects out[1]
+        let r0 = encrypt(&[0x41], 0);
+        let r7777 = encrypt(&[0x41], 7777);
+        let rff = encrypt(&[0x41], 0xFFFF);
+        assert_eq!(r0[1], r7777[1]);
+        assert_eq!(r0[1], rff[1]);
+        assert_eq!(r0[1], ENCR_TABLE[0x41]);
+    }
+
+    #[test]
+    fn two_bytes_odd_index_uses_port_mask() {
+        // port=0xCC → port_mask=0 → no XOR; odd byte = ENCR_TABLE[b] unmodified
+        let r0   = encrypt(&[0x41, 0x42], 0);
+        let rcc  = encrypt(&[0x41, 0x42], 0xCC);
+        assert_eq!(r0[1], rcc[1]);             // even index: unchanged
+        assert_ne!(r0[2], rcc[2]);             // odd index: differs
+        assert_eq!(rcc[2], ENCR_TABLE[0x42]); // port=0xCC → mask=0 → no XOR
+    }
+
+    #[test]
+    fn port_mask_formula_full() {
+        let data = [0u8; 4];
+        let r0  = encrypt(&data, 0);
+        let rcc = encrypt(&data, 0xCC);
+        let rff = encrypt(&data, 0xFFFF);
+        // Even-indexed output bytes (indices 1, 3): identical regardless of port
+        assert_eq!(r0[1], rcc[1]); assert_eq!(r0[1], rff[1]);
+        assert_eq!(r0[3], rcc[3]); assert_eq!(r0[3], rff[3]);
+        // Odd-indexed (indices 2, 4):
+        // port=0xCC → mask=0 (pass-through); port=0 → mask=0xCC
+        assert_eq!(r0[2], rcc[2] ^ 0xCC);
+        // port=0xFFFF → mask=(0xFF^0xCC)&0xFF=0x33
+        assert_eq!(rff[2], rcc[2] ^ 0x33);
+    }
+
+    #[test]
+    fn checksum_two_bytes_xaa_x55() {
+        // 0xAA & 0xAA = 0xAA; 0x55 & 0xAA = 0x00; checksum = 0xAA XOR 0x00 = 0xAA
+        assert_eq!(encrypt(&[0xAA, 0x55], 0)[0], 0xAA);
+    }
+
+    #[test]
+    fn all_zeros_checksum_is_zero() {
+        assert_eq!(encrypt(&[0u8; 16], 7777)[0], 0x00);
+    }
+
+    #[test]
+    fn all_0xff_checksum_cancels() {
+        // 0xFF & 0xAA = 0xAA; XOR of four 0xAA = 0x00 (even count)
+        assert_eq!(encrypt(&[0xFF; 4], 1)[0], 0x00);
+    }
+
+    #[test]
+    fn reference_impl_matches_all_ports() {
+        let data: Vec<u8> = (0u8..8).collect();
+        for port in [0u16, 1, 7777, 0xCC, 0xFF, 0x1234, 0xFFFF] {
+            assert_eq!(encrypt(&data, port), reference_encrypt(&data, port), "port={port}");
+        }
+    }
+
+    #[test]
+    fn reference_impl_all_single_bytes() {
+        for b in 0u8..=255 {
+            assert_eq!(encrypt(&[b], 0),    reference_encrypt(&[b], 0),    "b={b}");
+            assert_eq!(encrypt(&[b], 7777), reference_encrypt(&[b], 7777), "b={b}");
+        }
+    }
+
+    #[test] fn reference_impl_multi_byte_port_0()     { let d = b"\x41\x42\x43\x44\x55\xAA\xFF\x00"; assert_eq!(encrypt(d, 0),     reference_encrypt(d, 0));     }
+    #[test] fn reference_impl_multi_byte_port_7777()  { let d = b"\x41\x42\x43\x44\x55\xAA\xFF\x00"; assert_eq!(encrypt(d, 7777),  reference_encrypt(d, 7777));  }
+    #[test] fn reference_impl_multi_byte_port_0xcc()  { let d = b"\x41\x42\x43\x44\x55\xAA\xFF\x00"; assert_eq!(encrypt(d, 0xCC),  reference_encrypt(d, 0xCC));  }
+    #[test] fn reference_impl_multi_byte_port_0xffff(){ let d = b"\x41\x42\x43\x44\x55\xAA\xFF\x00"; assert_eq!(encrypt(d, 0xFFFF),reference_encrypt(d, 0xFFFF)); }
+
+    #[test]
+    fn encr_table_lookup_index_0() {
+        // ENCR_TABLE[0] = 0x27; at even index → no port XOR
+        assert_eq!(encrypt(&[0x00], 0)[1], 0x27);
+    }
+
+    #[test]
+    fn encr_table_lookup_capital_a() {
+        // 'A' = 0x41 = 65; ENCR_TABLE[65] = 0x6A; at even index → no port XOR
+        assert_eq!(encrypt(&[0x41], 0)[1], 0x6A);
+    }
+
+    // ── auth_response — more coverage ─────────────────────────────────────────
+
+    #[test]
+    fn auth_empty_string_none() {
+        assert_eq!(auth_response(""), None);
+    }
+
+    #[test]
+    fn auth_partial_challenge_none() {
+        // Prefix of a valid challenge must not match
+        assert_eq!(auth_response("6C407EC29DE59"), None);
+    }
+
+    #[test]
+    fn auth_known_multiple_entries() {
+        let cases = [
+            ("277C2AD934406F33", "132770E4744F6E78F2CBB4D3F3638EC05D7EA79D"),
+            ("3A968DE22423B39",  "D1080D41AD614649282887E4001C93AAEDBCA570"),
+            ("70A2762B77CD22CC", "B028F73A7B37AB5EF9B990ECA397C78841B7A086"),
+            ("359F5AE3211",      "3DFFB73BB4D79E532F4873C0BB160178448E8E30"),
+            ("4635C4F75E1278",   "AAC0014C5D75F52DC9772B73771B0050933A9EAD"),
+            ("15F838D177F569DC", "38ADAAD5DF8775AEEF22B865506D1341C2A1DA57"),
+        ];
+        for (challenge, expected) in cases {
+            assert_eq!(auth_response(challenge), Some(expected), "challenge={challenge}");
+        }
     }
 }
