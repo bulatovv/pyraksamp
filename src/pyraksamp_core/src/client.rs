@@ -191,6 +191,7 @@ pub struct SampClient {
     // Atomic state
     pub connected: AtomicBool,
     pub running:   AtomicBool,
+    spawned:       AtomicBool,
     send_msg_num:  AtomicU16,
     ordering_idx:  AtomicU16,
 
@@ -218,6 +219,7 @@ impl SampClient {
             net:          Mutex::new(None),
             connected:    AtomicBool::new(false),
             running:      AtomicBool::new(false),
+            spawned:      AtomicBool::new(false),
             send_msg_num: AtomicU16::new(0),
             ordering_idx: AtomicU16::new(0),
             player_id:    Mutex::new(-1),
@@ -474,15 +476,6 @@ impl SampClient {
 
     // ─── RPC handlers ─────────────────────────────────────────────────────────
 
-    fn request_class_and_spawn(&self) {
-        let class_id: i32 = 0;
-        self.send_rpc(RPC_REQUEST_CLASS, &class_id.to_le_bytes(), REL_RELIABLE);
-        std::thread::sleep(Duration::from_millis(100));
-        self.send_rpc(RPC_REQUEST_SPAWN, &[], REL_RELIABLE);
-        std::thread::sleep(Duration::from_millis(100));
-        self.send_rpc(RPC_SPAWN, &[], REL_RELIABLE);
-    }
-
     fn handle_rpc(&self, rpc_id: u8, payload: &[u8]) {
         let mut bs = BitStream::from_bytes(payload);
         let len = payload.len() as i32;
@@ -492,7 +485,18 @@ impl SampClient {
             match rpc_id {
                 RPC_INIT_GAME => {
                     fire!(self.callbacks, on_connect);
-                    self.request_class_and_spawn();
+                    // Request class 0; spawn is deferred until server replies (RPC_REQUEST_CLASS).
+                    let class_id: i32 = 0;
+                    self.send_rpc(RPC_REQUEST_CLASS, &class_id.to_le_bytes(), REL_RELIABLE);
+                }
+
+                RPC_REQUEST_CLASS => {
+                    // Server approved class selection (u8 outcome + PLAYER_SPAWN_INFO).
+                    // Spawn immediately — mirrors sampSpawn() in the reference.
+                    let _outcome = bs.read_uint8().ok()?;
+                    self.send_rpc(RPC_REQUEST_SPAWN, &[], REL_RELIABLE);
+                    self.send_rpc(RPC_SPAWN, &[], REL_RELIABLE);
+                    self.spawned.store(true, Ordering::Relaxed);
                 }
 
                 RPC_CONNECTION_REJ => {
@@ -912,7 +916,12 @@ impl SampClient {
                 last_ack_flush = now;
             }
             if now.duration_since(last_keepalive) > Duration::from_millis(500) {
-                self.send_keepalive();
+                // Only send on-foot sync after spawning — the reference (misc_funcs.cpp)
+                // calls onFootUpdateAtNormalPos() only inside the iSpawned == 1 branch.
+                // Sending it pre-spawn confuses the server's player state machine.
+                if self.spawned.load(Ordering::Relaxed) {
+                    self.send_keepalive();
+                }
                 last_keepalive = now;
             }
             if now.duration_since(last_scores) > Duration::from_secs(3) {
@@ -960,6 +969,7 @@ impl SampClient {
 
     pub fn disconnect(&self) {
         self.running.store(false, Ordering::Relaxed);
+        self.spawned.store(false, Ordering::Relaxed);
         let disc = vec![ID_DISCONNECTION_NOTIFICATION, 0];
         self.send_reliability_pkt(&disc, REL_RELIABLE, 0, 0);
         std::thread::sleep(Duration::from_millis(100));
