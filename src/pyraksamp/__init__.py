@@ -30,7 +30,6 @@ Quick start::
 import asyncio
 import random
 import struct
-import threading
 
 from pyraksamp._core import SAMPClient as _SAMPClient
 from pyraksamp import _core
@@ -180,7 +179,7 @@ def gen_gpci() -> str:
 class SAMPBot:
     """Async SA:MP 0.3.7 headless client.
 
-    Internally runs one daemon thread per bot (the C++ receive/keepalive loop).
+    Internally runs one daemon thread per bot (the Rust receive/keepalive loop).
     All user-facing callbacks and event streams run in the asyncio event loop —
     no thread management required from user code.
 
@@ -199,7 +198,6 @@ class SAMPBot:
         if not gpci:
             gpci = gen_gpci()
         self._client = _SAMPClient(host, port, nickname, password, gpci)
-        self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
         # Fan-out subscriber queues.  Each active rpcs()/events() call appends
@@ -931,37 +929,18 @@ class SAMPBot:
 
     # ── Connection lifecycle ───────────────────────────────────────────────────
 
-    async def connect(self, timeout: float = 15.0) -> bool:
-        """Perform the full handshake/auth/join sequence.
-        Runs the blocking C++ connect() in a thread-pool executor.
-        Returns True on success.
+    async def start(self, timeout: float = 15.0) -> bool:
+        """Connect and spawn the background receive/keepalive thread.
+        Returns True on success.  After this returns, events begin flowing.
         """
         loop = asyncio.get_running_loop()
         self._loop = loop
         self._setup_callbacks(loop)
-        return await loop.run_in_executor(None, lambda: self._client.connect(timeout))
-
-    async def start(self, timeout: float = 15.0) -> bool:
-        """Connect, then spawn the background C++ receive/keepalive thread.
-        Returns True on success.  After this returns, events begin flowing.
-        """
-        if not await self.connect(timeout):
-            return False
-        self._thread = threading.Thread(
-            target=self._client.run,
-            daemon=True,
-            name=f"samp-recv-{self._client.player_id}",
-        )
-        self._thread.start()
-        return True
+        return await loop.run_in_executor(None, lambda: self._client.start(timeout))
 
     async def disconnect(self) -> None:
-        """Send disconnect notification and wait for the receive thread to exit."""
-        loop = asyncio.get_running_loop()
+        """Send disconnect notification and stop the receive loop."""
         self._client.disconnect()
-        if self._thread:
-            await loop.run_in_executor(None, lambda: self._thread.join(timeout=2.0))
-            self._thread = None
 
     def stop(self) -> None:
         """Signal the receive loop to stop without sending a disconnect packet."""

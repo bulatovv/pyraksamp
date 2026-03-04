@@ -110,14 +110,15 @@ impl PySAMPClient {
     }
 
     #[pyo3(signature = (timeout=15.0))]
-    fn connect(&self, py: Python, timeout: f64) -> bool {
+    fn start(&self, py: Python, timeout: f64) -> bool {
         let inner = Arc::clone(&self.inner);
-        py.allow_threads(move || inner.connect(timeout))
-    }
-
-    fn run(&self, py: Python) {
+        let connected = py.allow_threads(move || inner.connect(timeout));
+        if !connected { return false; }
         let inner = Arc::clone(&self.inner);
-        py.allow_threads(move || inner.run());
+        std::thread::Builder::new()
+            .name(format!("samp-recv-{}", self.inner.player_id()))
+            .spawn(move || inner.run())
+            .is_ok()
     }
 
     fn stop(&self)       { self.inner.stop(); }
