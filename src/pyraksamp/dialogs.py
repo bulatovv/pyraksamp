@@ -44,39 +44,44 @@ class Button:
 
 
 class ButtonSelector:
-    """Selector for dialog buttons. SA:MP indexing: [1]=first/OK, [0]=second/Cancel."""
+    """Selector for dialog buttons. SA:MP indexing: [1]=first/OK, [0]=second/Cancel.
+
+    Stored as a 2-element list indexed by SA:MP button ID:
+        _buttons[0] = Cancel/second (None if no second button)
+        _buttons[1] = OK/first
+    """
 
     __slots__ = ("_buttons",)
 
-    def __init__(self, buttons: list[Button]) -> None:
-        self._buttons = buttons
+    def __init__(self, buttons: list[Button | None]) -> None:
+        self._buttons = buttons  # length 2, index == SA:MP button ID
 
     def __getitem__(self, samp_id: int) -> Button:
-        for b in self._buttons:
-            if b.id == samp_id:
-                return b
-        raise KeyError(samp_id)
+        btn = self._buttons[samp_id]
+        if btn is None:
+            raise KeyError(samp_id)
+        return btn
 
     def __call__(self, pred: Callable[[Button], bool]) -> Button:
         for b in self._buttons:
-            if pred(b):
+            if b is not None and pred(b):
                 return b
         raise ValueError("no button matches predicate")
 
     def __iter__(self) -> Iterator[Button]:
-        return iter(self._buttons)
+        return (b for b in self._buttons if b is not None)
 
     def __len__(self) -> int:
-        return len(self._buttons)
+        return sum(1 for b in self._buttons if b is not None)
 
 
 def _make_buttons(
     dialog_id: int, button1: str, button2: str, bot: SAMPBot
 ) -> ButtonSelector:
-    buttons = [Button(label=button1, id=1, _dialog_id=dialog_id, _bot=bot)]
-    if button2:
-        buttons.append(Button(label=button2, id=0, _dialog_id=dialog_id, _bot=bot))
-    return ButtonSelector(buttons)
+    # index == SA:MP button ID: [0]=Cancel, [1]=OK
+    cancel = Button(label=button2, id=0, _dialog_id=dialog_id, _bot=bot) if button2 else None
+    ok = Button(label=button1, id=1, _dialog_id=dialog_id, _bot=bot)
+    return ButtonSelector([cancel, ok])
 
 
 # ── Rows ───────────────────────────────────────────────────────────────────────
