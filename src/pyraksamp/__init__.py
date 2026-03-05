@@ -168,21 +168,25 @@ def _make_obj_filter(predicate, kwargs):
     kw = {k: v for k, v in kwargs.items() if v is not None}
     if predicate is None and not kw:
         return None
+
     def filt(obj):
         if predicate is not None and not predicate(obj):
             return False
         return all(getattr(obj, k) == v for k, v in kw.items())
+
     return filt
 
 
 def _wrap_obj(fn, filt):
     """Wrap a single-arg event callback with a predicate guard."""
+
     async def wrapper(obj):
         if filt(obj):
             if asyncio.iscoroutinefunction(fn):
                 await fn(obj)
             else:
                 fn(obj)
+
     return wrapper
 
 
@@ -782,8 +786,10 @@ class SAMPBot:
             rpc_id=61            – specific RPC only
             predicate=lambda rid, data: ...
         """
+
         def decorator(f):
             if rpc_id is not None or predicate is not None:
+
                 async def wrapper(rid, data):
                     if rpc_id is not None and rid != rpc_id:
                         return
@@ -793,35 +799,91 @@ class SAMPBot:
                         await f(rid, data)
                     else:
                         f(rid, data)
+
                 self._cb_rpc = wrapper
             else:
                 self._cb_rpc = f
             return f
+
         if fn is not None:
             return decorator(fn)
         return decorator
 
-    def on_player_join(self, fn):
-        """Decorator: fn(event: PlayerJoin) when a player connects."""
-        self._cb_player_join = fn
-        return fn
+    def on_player_join(
+        self,
+        fn=None,
+        *,
+        player_id: int | None = None,
+        name: str | None = None,
+        predicate=None,
+    ):
+        """Decorator: fn(event: PlayerJoin) when a player connects.
 
-    def on_player_quit(self, fn):
-        """Decorator: fn(event: PlayerQuit) when a player disconnects."""
-        self._cb_player_quit = fn
-        return fn
+        Optional filters: player_id=, name=, predicate=lambda e: ...
+        """
 
-    def on_chat(self, fn):
-        """Decorator: fn(event: ChatMessage) for public chat."""
-        self._cb_chat = fn
-        return fn
+        def decorator(f):
+            filt = _make_obj_filter(predicate, {"player_id": player_id, "name": name})
+            self._cb_player_join = _wrap_obj(f, filt) if filt else f
+            return f
 
-    def on_client_message(self, fn):
-        """Decorator: fn(event: ServerMessage) for server messages."""
-        self._cb_client_message = fn
-        return fn
+        if fn is not None:
+            return decorator(fn)
+        return decorator
 
-    def on_dialog(self, fn=None, *, predicate=None, style: int | None = None, dialog_id: int | None = None):
+    def on_player_quit(self, fn=None, *, player_id: int | None = None, predicate=None):
+        """Decorator: fn(event: PlayerQuit) when a player disconnects.
+
+        Optional filters: player_id=, predicate=lambda e: ...
+        """
+
+        def decorator(f):
+            filt = _make_obj_filter(predicate, {"player_id": player_id})
+            self._cb_player_quit = _wrap_obj(f, filt) if filt else f
+            return f
+
+        if fn is not None:
+            return decorator(fn)
+        return decorator
+
+    def on_chat(self, fn=None, *, player_id: int | None = None, predicate=None):
+        """Decorator: fn(event: ChatMessage) for public chat.
+
+        Optional filters: player_id=, predicate=lambda e: e.text.startswith("!")
+        """
+
+        def decorator(f):
+            filt = _make_obj_filter(predicate, {"player_id": player_id})
+            self._cb_chat = _wrap_obj(f, filt) if filt else f
+            return f
+
+        if fn is not None:
+            return decorator(fn)
+        return decorator
+
+    def on_client_message(self, fn=None, *, color: int | None = None, predicate=None):
+        """Decorator: fn(event: ServerMessage) for server messages.
+
+        Optional filters: color=0xFF0000FF, predicate=lambda e: ...
+        """
+
+        def decorator(f):
+            filt = _make_obj_filter(predicate, {"color": color})
+            self._cb_client_message = _wrap_obj(f, filt) if filt else f
+            return f
+
+        if fn is not None:
+            return decorator(fn)
+        return decorator
+
+    def on_dialog(
+        self,
+        fn=None,
+        *,
+        predicate=None,
+        style: int | None = None,
+        dialog_id: int | None = None,
+    ):
         """Decorator: fn(event: Dialog) when a dialog is shown.
 
         Optional filters (all must match):
@@ -829,18 +891,30 @@ class SAMPBot:
             dialog_id=32700      – specific dialog ID
             predicate=lambda d: "register" in d.title
         """
+
         def decorator(f):
             filt = _make_obj_filter(predicate, {"style": style, "dialog_id": dialog_id})
             self._cb_dialog = _wrap_obj(f, filt) if filt else f
             return f
+
         if fn is not None:
             return decorator(fn)
         return decorator
 
-    def on_game_text(self, fn):
-        """Decorator: fn(event: GameText) for ShowGameText."""
-        self._cb_game_text = fn
-        return fn
+    def on_game_text(self, fn=None, *, style: int | None = None, predicate=None):
+        """Decorator: fn(event: GameText) for ShowGameText.
+
+        Optional filters: style=, predicate=lambda e: ...
+        """
+
+        def decorator(f):
+            filt = _make_obj_filter(predicate, {"style": style})
+            self._cb_game_text = _wrap_obj(f, filt) if filt else f
+            return f
+
+        if fn is not None:
+            return decorator(fn)
+        return decorator
 
     def on_set_health(self, fn):
         """Decorator: fn(event: SetHealth)."""
@@ -1184,7 +1258,9 @@ class SAMPBot:
             if predicate is None or predicate(rpc_id, data):
                 return data
 
-    async def wait_for_dialog(self, predicate=None, *, style: int | None = None, dialog_id: int | None = None) -> Dialog:
+    async def wait_for_dialog(
+        self, predicate=None, *, style: int | None = None, dialog_id: int | None = None
+    ) -> Dialog:
         """Await the next dialog matching all given filters.
 
         Optional filters (all must match):
@@ -1196,6 +1272,33 @@ class SAMPBot:
         async for dlg in self.dialogs():
             if filt is None or filt(dlg):
                 return dlg
+
+    async def wait_for_chat(
+        self, predicate=None, *, player_id: int | None = None
+    ) -> ChatMessage:
+        """Await the next public chat message matching all given filters."""
+        filt = _make_obj_filter(predicate, {"player_id": player_id})
+        async for msg in self.chat():
+            if filt is None or filt(msg):
+                return msg
+
+    async def wait_for_client_message(
+        self, predicate=None, *, color: int | None = None
+    ) -> ServerMessage:
+        """Await the next server message matching all given filters."""
+        filt = _make_obj_filter(predicate, {"color": color})
+        async for msg in self.server_messages():
+            if filt is None or filt(msg):
+                return msg
+
+    async def wait_for_player_join(
+        self, predicate=None, *, player_id: int | None = None, name: str | None = None
+    ) -> PlayerJoin:
+        """Await the next player join matching all given filters."""
+        filt = _make_obj_filter(predicate, {"player_id": player_id, "name": name})
+        async for evt in self.player_joins():
+            if filt is None or filt(evt):
+                return evt
 
     # ── Game actions ───────────────────────────────────────────────────────────
     # Sending a UDP packet is fast — no executor or await needed.
