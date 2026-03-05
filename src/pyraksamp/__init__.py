@@ -163,6 +163,29 @@ RPC_WORLD_VEHICLE_REMOVE = _core.RPC_WORLD_VEHICLE_REMOVE
 RPC_DEATH_BROADCAST = _core.RPC_DEATH_BROADCAST
 
 
+def _make_obj_filter(predicate, kwargs):
+    """Return a filter callable(obj)->bool, or None if no filtering requested."""
+    kw = {k: v for k, v in kwargs.items() if v is not None}
+    if predicate is None and not kw:
+        return None
+    def filt(obj):
+        if predicate is not None and not predicate(obj):
+            return False
+        return all(getattr(obj, k) == v for k, v in kw.items())
+    return filt
+
+
+def _wrap_obj(fn, filt):
+    """Wrap a single-arg event callback with a predicate guard."""
+    async def wrapper(obj):
+        if filt(obj):
+            if asyncio.iscoroutinefunction(fn):
+                await fn(obj)
+            else:
+                fn(obj)
+    return wrapper
+
+
 def gen_gpci() -> str:
     """Generate a random valid GPCI (hex string divisible by 1001, 35–49 chars)."""
     factor = 1001
@@ -752,10 +775,31 @@ class SAMPBot:
         self._cb_disconnect = fn
         return fn
 
-    def on_rpc(self, fn):
-        """Decorator: fn(rpc_id: int, data: bytes) for every incoming RPC (raw)."""
-        self._cb_rpc = fn
-        return fn
+    def on_rpc(self, fn=None, *, rpc_id: int | None = None, predicate=None):
+        """Decorator: fn(rpc_id: int, data: bytes) for every incoming RPC (raw).
+
+        Optional filters:
+            rpc_id=61            – specific RPC only
+            predicate=lambda rid, data: ...
+        """
+        def decorator(f):
+            if rpc_id is not None or predicate is not None:
+                async def wrapper(rid, data):
+                    if rpc_id is not None and rid != rpc_id:
+                        return
+                    if predicate is not None and not predicate(rid, data):
+                        return
+                    if asyncio.iscoroutinefunction(f):
+                        await f(rid, data)
+                    else:
+                        f(rid, data)
+                self._cb_rpc = wrapper
+            else:
+                self._cb_rpc = f
+            return f
+        if fn is not None:
+            return decorator(fn)
+        return decorator
 
     def on_player_join(self, fn):
         """Decorator: fn(event: PlayerJoin) when a player connects."""
@@ -777,10 +821,21 @@ class SAMPBot:
         self._cb_client_message = fn
         return fn
 
-    def on_dialog(self, fn):
-        """Decorator: fn(event: Dialog) when a dialog is shown."""
-        self._cb_dialog = fn
-        return fn
+    def on_dialog(self, fn=None, *, predicate=None, style: int | None = None, dialog_id: int | None = None):
+        """Decorator: fn(event: Dialog) when a dialog is shown.
+
+        Optional filters (all must match):
+            style=1              – INPUT dialogs only
+            dialog_id=32700      – specific dialog ID
+            predicate=lambda d: "register" in d.title
+        """
+        def decorator(f):
+            filt = _make_obj_filter(predicate, {"style": style, "dialog_id": dialog_id})
+            self._cb_dialog = _wrap_obj(f, filt) if filt else f
+            return f
+        if fn is not None:
+            return decorator(fn)
+        return decorator
 
     def on_game_text(self, fn):
         """Decorator: fn(event: GameText) for ShowGameText."""
@@ -1123,15 +1178,24 @@ class SAMPBot:
         """Async generator yielding PlayerDeath."""
         return self._typed_gen("player_death")
 
-    async def wait_for_rpc(self, rpc_id: int) -> bytes:
-        """Await the next raw RPC with the given ID and return its payload bytes."""
+    async def wait_for_rpc(self, rpc_id: int, *, predicate=None) -> bytes:
+        """Await the next RPC with the given ID and return its payload bytes."""
         async for _, data in self.rpcs(rpc_id=rpc_id):
-            return data
+            if predicate is None or predicate(rpc_id, data):
+                return data
 
-    async def wait_for_dialog(self) -> Dialog:
-        """Await the next dialog and return it."""
+    async def wait_for_dialog(self, predicate=None, *, style: int | None = None, dialog_id: int | None = None) -> Dialog:
+        """Await the next dialog matching all given filters.
+
+        Optional filters (all must match):
+            style=1              – INPUT dialogs only
+            dialog_id=32700      – specific dialog ID
+            predicate=lambda d: "register" in d.title
+        """
+        filt = _make_obj_filter(predicate, {"style": style, "dialog_id": dialog_id})
         async for dlg in self.dialogs():
-            return dlg
+            if filt is None or filt(dlg):
+                return dlg
 
     # ── Game actions ───────────────────────────────────────────────────────────
     # Sending a UDP packet is fast — no executor or await needed.
