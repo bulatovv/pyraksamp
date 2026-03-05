@@ -52,10 +52,16 @@ class ButtonSelector:
         self._buttons = buttons
 
     def __getitem__(self, samp_id: int) -> Button:
-        return next(b for b in self._buttons if b.id == samp_id)
+        for b in self._buttons:
+            if b.id == samp_id:
+                return b
+        raise KeyError(samp_id)
 
     def __call__(self, pred: Callable[[Button], bool]) -> Button:
-        return next(b for b in self._buttons if pred(b))
+        for b in self._buttons:
+            if pred(b):
+                return b
+        raise ValueError("no button matches predicate")
 
     def __iter__(self) -> Iterator[Button]:
         return iter(self._buttons)
@@ -114,7 +120,10 @@ class RowSelector(Generic[_R]):
         return self._rows[idx]
 
     def __call__(self, pred: Callable[[_R], bool]) -> _R:
-        return next(r for r in self._rows if pred(r))
+        for r in self._rows:
+            if pred(r):
+                return r
+        raise ValueError("no row matches predicate")
 
     def __iter__(self) -> Iterator[_R]:
         return iter(self._rows)
