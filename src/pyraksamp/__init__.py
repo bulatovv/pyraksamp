@@ -33,8 +33,6 @@ import struct
 from collections.abc import Callable
 from typing import TypeVar
 
-_F = TypeVar("_F", bound=Callable)
-
 from pyraksamp._core import SAMPClient as _SAMPClient
 from pyraksamp import _core
 from pyraksamp.events import (
@@ -165,6 +163,9 @@ RPC_SET_INTERIOR = _core.RPC_SET_INTERIOR
 RPC_WORLD_VEHICLE_ADD = _core.RPC_WORLD_VEHICLE_ADD
 RPC_WORLD_VEHICLE_REMOVE = _core.RPC_WORLD_VEHICLE_REMOVE
 RPC_DEATH_BROADCAST = _core.RPC_DEATH_BROADCAST
+
+
+_F = TypeVar("_F", bound=Callable)
 
 
 def _make_obj_filter(predicate, kwargs):
@@ -783,7 +784,13 @@ class SAMPBot:
         self._cb_disconnect = fn
         return fn
 
-    def on_rpc(self, fn: _F | None = None, *, rpc_id: int | None = None, predicate=None) -> _F | Callable[[_F], _F]:
+    def on_rpc(
+        self,
+        fn: _F | None = None,
+        *,
+        rpc_id: int | None = None,
+        predicate: Callable[[int, bytes], bool] | None = None,
+    ) -> _F | Callable[[_F], _F]:
         """Decorator: fn(rpc_id: int, data: bytes) for every incoming RPC (raw).
 
         Optional filters:
@@ -819,7 +826,7 @@ class SAMPBot:
         *,
         player_id: int | None = None,
         name: str | None = None,
-        predicate=None,
+        predicate: Callable[[PlayerJoin], bool] | None = None,
     ) -> _F | Callable[[_F], _F]:
         """Decorator: fn(event: PlayerJoin) when a player connects.
 
@@ -835,7 +842,13 @@ class SAMPBot:
             return decorator(fn)
         return decorator
 
-    def on_player_quit(self, fn: _F | None = None, *, player_id: int | None = None, predicate=None) -> _F | Callable[[_F], _F]:
+    def on_player_quit(
+        self,
+        fn: _F | None = None,
+        *,
+        player_id: int | None = None,
+        predicate: Callable[[PlayerQuit], bool] | None = None,
+    ) -> _F | Callable[[_F], _F]:
         """Decorator: fn(event: PlayerQuit) when a player disconnects.
 
         Optional filters: player_id=, predicate=lambda e: ...
@@ -850,7 +863,13 @@ class SAMPBot:
             return decorator(fn)
         return decorator
 
-    def on_chat(self, fn: _F | None = None, *, player_id: int | None = None, predicate=None) -> _F | Callable[[_F], _F]:
+    def on_chat(
+        self,
+        fn: _F | None = None,
+        *,
+        player_id: int | None = None,
+        predicate: Callable[[ChatMessage], bool] | None = None,
+    ) -> _F | Callable[[_F], _F]:
         """Decorator: fn(event: ChatMessage) for public chat.
 
         Optional filters: player_id=, predicate=lambda e: e.text.startswith("!")
@@ -865,7 +884,13 @@ class SAMPBot:
             return decorator(fn)
         return decorator
 
-    def on_client_message(self, fn: _F | None = None, *, color: int | None = None, predicate=None) -> _F | Callable[[_F], _F]:
+    def on_client_message(
+        self,
+        fn: _F | None = None,
+        *,
+        color: int | None = None,
+        predicate: Callable[[ServerMessage], bool] | None = None,
+    ) -> _F | Callable[[_F], _F]:
         """Decorator: fn(event: ServerMessage) for server messages.
 
         Optional filters: color=0xFF0000FF, predicate=lambda e: ...
@@ -884,7 +909,7 @@ class SAMPBot:
         self,
         fn: _F | None = None,
         *,
-        predicate=None,
+        predicate: Callable[[Dialog], bool] | None = None,
         style: int | None = None,
         dialog_id: int | None = None,
     ) -> _F | Callable[[_F], _F]:
@@ -905,7 +930,13 @@ class SAMPBot:
             return decorator(fn)
         return decorator
 
-    def on_game_text(self, fn: _F | None = None, *, style: int | None = None, predicate=None) -> _F | Callable[[_F], _F]:
+    def on_game_text(
+        self,
+        fn: _F | None = None,
+        *,
+        style: int | None = None,
+        predicate: Callable[[GameText], bool] | None = None,
+    ) -> _F | Callable[[_F], _F]:
         """Decorator: fn(event: GameText) for ShowGameText.
 
         Optional filters: style=, predicate=lambda e: ...
@@ -1256,14 +1287,20 @@ class SAMPBot:
         """Async generator yielding PlayerDeath."""
         return self._typed_gen("player_death")
 
-    async def wait_for_rpc(self, rpc_id: int, *, predicate=None) -> bytes:
+    async def wait_for_rpc(
+        self, rpc_id: int, *, predicate: Callable[[int, bytes], bool] | None = None
+    ) -> bytes:
         """Await the next RPC with the given ID and return its payload bytes."""
         async for _, data in self.rpcs(rpc_id=rpc_id):
             if predicate is None or predicate(rpc_id, data):
                 return data
 
     async def wait_for_dialog(
-        self, predicate=None, *, style: int | None = None, dialog_id: int | None = None
+        self,
+        predicate: Callable[[Dialog], bool] | None = None,
+        *,
+        style: int | None = None,
+        dialog_id: int | None = None,
     ) -> Dialog:
         """Await the next dialog matching all given filters.
 
@@ -1278,7 +1315,10 @@ class SAMPBot:
                 return dlg
 
     async def wait_for_chat(
-        self, predicate=None, *, player_id: int | None = None
+        self,
+        predicate: Callable[[ChatMessage], bool] | None = None,
+        *,
+        player_id: int | None = None,
     ) -> ChatMessage:
         """Await the next public chat message matching all given filters."""
         filt = _make_obj_filter(predicate, {"player_id": player_id})
@@ -1287,7 +1327,10 @@ class SAMPBot:
                 return msg
 
     async def wait_for_client_message(
-        self, predicate=None, *, color: int | None = None
+        self,
+        predicate: Callable[[ServerMessage], bool] | None = None,
+        *,
+        color: int | None = None,
     ) -> ServerMessage:
         """Await the next server message matching all given filters."""
         filt = _make_obj_filter(predicate, {"color": color})
@@ -1296,7 +1339,11 @@ class SAMPBot:
                 return msg
 
     async def wait_for_player_join(
-        self, predicate=None, *, player_id: int | None = None, name: str | None = None
+        self,
+        predicate: Callable[[PlayerJoin], bool] | None = None,
+        *,
+        player_id: int | None = None,
+        name: str | None = None,
     ) -> PlayerJoin:
         """Await the next player join matching all given filters."""
         filt = _make_obj_filter(predicate, {"player_id": player_id, "name": name})
