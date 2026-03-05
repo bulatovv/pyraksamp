@@ -44,22 +44,22 @@ class Button:
 
 
 class ButtonSelector:
-    """Selector for dialog buttons. SA:MP indexing: [1]=first/OK, [0]=second/Cancel.
+    """Selector for dialog buttons. Positional: [0]=left/OK, [1]=right/Cancel.
 
-    Stored as a 2-element list indexed by SA:MP button ID:
-        _buttons[0] = Cancel/second (None if no second button)
-        _buttons[1] = OK/first
+    Stored as a 2-element list:
+        _buttons[0] = left/first (always present)
+        _buttons[1] = right/second (None if no second button)
     """
 
     __slots__ = ("_buttons",)
 
     def __init__(self, buttons: list[Button | None]) -> None:
-        self._buttons = buttons  # length 2, index == SA:MP button ID
+        self._buttons = buttons  # [0]=left, [1]=right
 
-    def __getitem__(self, samp_id: int) -> Button:
-        btn = self._buttons[samp_id]
+    def __getitem__(self, idx: int) -> Button:
+        btn = self._buttons[idx]
         if btn is None:
-            raise KeyError(samp_id)
+            raise KeyError(idx)
         return btn
 
     def __call__(self, pred: Callable[[Button], bool]) -> Button:
@@ -78,10 +78,12 @@ class ButtonSelector:
 def _make_buttons(
     dialog_id: int, button1: str, button2: str, bot: SAMPBot
 ) -> ButtonSelector:
-    # index == SA:MP button ID: [0]=Cancel, [1]=OK
-    cancel = Button(label=button2, id=0, _dialog_id=dialog_id, _bot=bot) if button2 else None
-    ok = Button(label=button1, id=1, _dialog_id=dialog_id, _bot=bot)
-    return ButtonSelector([cancel, ok])
+    # [0]=left/OK (wire id=1), [1]=right/Cancel (wire id=0)
+    left = Button(label=button1, id=1, _dialog_id=dialog_id, _bot=bot)
+    right = (
+        Button(label=button2, id=0, _dialog_id=dialog_id, _bot=bot) if button2 else None
+    )
+    return ButtonSelector([left, right])
 
 
 # ── Rows ───────────────────────────────────────────────────────────────────────
