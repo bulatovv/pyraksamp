@@ -35,10 +35,24 @@ from typing import TypeVar
 
 from pyraksamp._core import SAMPClient as _SAMPClient
 from pyraksamp import _core
+from pyraksamp.dialogs import (
+    AnyDialog,
+    MsgboxDialog,
+    InputDialog,
+    PasswordDialog,
+    ListDialog,
+    TablistDialog,
+    TablistHeadersDialog,
+    Button,
+    ButtonSelector,
+    ListRow,
+    TablistRow,
+    RowSelector,
+    _make_dialog,
+)
 from pyraksamp.events import (
     ChatMessage,
     ServerMessage,
-    Dialog,
     GameText,
     PlayerJoin,
     PlayerQuit,
@@ -73,9 +87,20 @@ from pyraksamp.events import (
 __all__ = [
     "SAMPBot",
     "gen_gpci",
+    "AnyDialog",
+    "MsgboxDialog",
+    "InputDialog",
+    "PasswordDialog",
+    "ListDialog",
+    "TablistDialog",
+    "TablistHeadersDialog",
+    "Button",
+    "ButtonSelector",
+    "ListRow",
+    "TablistRow",
+    "RowSelector",
     "ChatMessage",
     "ServerMessage",
-    "Dialog",
     "GameText",
     "PlayerJoin",
     "PlayerQuit",
@@ -378,14 +403,7 @@ class SAMPBot:
         def on_dialog(
             did: int, style: int, title: str, btn1: str, btn2: str, body: str
         ):
-            evt = Dialog(
-                dialog_id=did,
-                style=style,
-                title=title,
-                button1=btn1,
-                button2=btn2,
-                body=body,
-            )
+            evt = _make_dialog(did, style, title, btn1, btn2, body, self)
             loop.call_soon_threadsafe(
                 lambda: (
                     self._broadcast(("dialog", evt)),
@@ -909,11 +927,11 @@ class SAMPBot:
         self,
         fn: _F | None = None,
         *,
-        predicate: Callable[[Dialog], bool] | None = None,
+        predicate: Callable[[AnyDialog], bool] | None = None,
         style: int | None = None,
         dialog_id: int | None = None,
     ) -> _F | Callable[[_F], _F]:
-        """Decorator: fn(event: Dialog) when a dialog is shown.
+        """Decorator: fn(event: AnyDialog) when a dialog is shown.
 
         Optional filters (all must match):
             style=1              – INPUT dialogs only
@@ -1147,7 +1165,7 @@ class SAMPBot:
         - ``('player_quit', PlayerQuit)``
         - ``('chat', ChatMessage)``
         - ``('client_message', ServerMessage)``
-        - ``('dialog', Dialog)``
+        - ``('dialog', AnyDialog)``
         - ``('game_text', GameText)``
         - ``('set_health', SetHealth)``
         - ``('set_armour', SetArmour)``
@@ -1216,7 +1234,7 @@ class SAMPBot:
         return self._typed_gen("client_message")
 
     def dialogs(self):
-        """Async generator yielding Dialog each time a dialog is shown."""
+        """Async generator yielding AnyDialog each time a dialog is shown."""
         return self._typed_gen("dialog")
 
     def game_texts(self):
@@ -1297,11 +1315,11 @@ class SAMPBot:
 
     async def wait_for_dialog(
         self,
-        predicate: Callable[[Dialog], bool] | None = None,
+        predicate: Callable[[AnyDialog], bool] | None = None,
         *,
         style: int | None = None,
         dialog_id: int | None = None,
-    ) -> Dialog:
+    ) -> AnyDialog:
         """Await the next dialog matching all given filters.
 
         Optional filters (all must match):

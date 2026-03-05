@@ -5,7 +5,6 @@ from dataclasses import dataclass
 __all__ = [
     "ChatMessage",
     "ServerMessage",
-    "Dialog",
     "GameText",
     "PlayerJoin",
     "PlayerQuit",
@@ -52,18 +51,6 @@ class ServerMessage:
 
     color: int  # 0xRRGGBBAA
     text: str
-
-
-@dataclass
-class Dialog:
-    """ShowPlayerDialog — style constants match SA:MP DIALOG_STYLE_*."""
-
-    dialog_id: int
-    style: int  # 0=MSGBOX 1=INPUT 2=LIST 3=PASSWORD
-    title: str
-    button1: str
-    button2: str  # empty string means no second button
-    body: str  # Huffman-decoded body / list contents
 
 
 @dataclass
