@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from pyraksamp import SAMPBot
+from pyraksamp._bus import _EventBus
 from pyraksamp.dialogs import (
     _make_buttons,
     _make_dialog,
@@ -216,8 +217,10 @@ def test_unknown_style_fallback():
 
 
 def _mock_self():
-    """Minimal stand-in for SAMPBot — only needs _cb_dialog."""
-    return SimpleNamespace(_cb_dialog=None)
+    """Minimal stand-in for SAMPBot — needs _bus with _cb_dialog."""
+    bot = SimpleNamespace()
+    bot._bus = _EventBus()
+    return bot
 
 
 def _run(coro):
@@ -246,8 +249,8 @@ def test_on_dialog_bare_receives_all():
     bot = _mock_self()
     received = []
     SAMPBot.on_dialog(bot, lambda dlg: received.append(dlg))
-    _call(bot._cb_dialog, _input_dlg())
-    _call(bot._cb_dialog, _msgbox_dlg())
+    _call(bot._bus._cb_dialog, _input_dlg())
+    _call(bot._bus._cb_dialog, _msgbox_dlg())
     assert len(received) == 2
 
 
@@ -256,8 +259,8 @@ def test_on_dialog_no_filter_receives_all():
     bot = _mock_self()
     received = []
     SAMPBot.on_dialog(bot)(lambda dlg: received.append(dlg))
-    _call(bot._cb_dialog, _input_dlg())
-    _call(bot._cb_dialog, _msgbox_dlg())
+    _call(bot._bus._cb_dialog, _input_dlg())
+    _call(bot._bus._cb_dialog, _msgbox_dlg())
     assert len(received) == 2
 
 
@@ -266,7 +269,7 @@ def test_on_dialog_type_filter_passes_matching():
     bot = _mock_self()
     received = []
     SAMPBot.on_dialog(bot, dialog_type=InputDialog)(lambda dlg: received.append(dlg))
-    _run(bot._cb_dialog(_input_dlg()))
+    _run(bot._bus._cb_dialog(_input_dlg()))
     assert len(received) == 1
     assert isinstance(received[0], InputDialog)
 
@@ -276,7 +279,7 @@ def test_on_dialog_type_filter_blocks_other():
     bot = _mock_self()
     received = []
     SAMPBot.on_dialog(bot, dialog_type=InputDialog)(lambda dlg: received.append(dlg))
-    _run(bot._cb_dialog(_msgbox_dlg()))
+    _run(bot._bus._cb_dialog(_msgbox_dlg()))
     assert len(received) == 0
 
 
@@ -285,8 +288,8 @@ def test_on_dialog_dialog_id_filter():
     bot = _mock_self()
     received = []
     SAMPBot.on_dialog(bot, dialog_id=1)(lambda dlg: received.append(dlg))
-    _run(bot._cb_dialog(_input_dlg()))   # id=1 — should pass
-    _run(bot._cb_dialog(_msgbox_dlg()))  # id=2 — should be blocked
+    _run(bot._bus._cb_dialog(_input_dlg()))   # id=1 — should pass
+    _run(bot._bus._cb_dialog(_msgbox_dlg()))  # id=2 — should be blocked
     assert len(received) == 1
 
 
@@ -299,9 +302,9 @@ def test_on_dialog_predicate_filter():
         dialog_type=InputDialog,
         predicate=lambda d: "Login" in d.title,
     )(lambda dlg: received.append(dlg))
-    _run(bot._cb_dialog(_input_dlg()))   # title="Login" — passes
+    _run(bot._bus._cb_dialog(_input_dlg()))   # title="Login" — passes
     other = _make_dialog(3, 1, "Register", "OK", "", "", MagicMock())
-    _run(bot._cb_dialog(other))          # title="Register" — blocked by predicate
+    _run(bot._bus._cb_dialog(other))          # title="Register" — blocked by predicate
     assert len(received) == 1
 
 
@@ -314,7 +317,7 @@ def test_on_dialog_async_handler():
         received.append(dlg)
 
     SAMPBot.on_dialog(bot, dialog_type=InputDialog)(handler)
-    _run(bot._cb_dialog(_input_dlg()))
+    _run(bot._bus._cb_dialog(_input_dlg()))
     assert len(received) == 1
 
 

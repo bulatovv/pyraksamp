@@ -29,12 +29,15 @@ Quick start::
 
 import asyncio
 import random
-import struct
 from collections.abc import Callable
 from typing import Any, overload
 
 from pyraksamp._core import SAMPClient as _SAMPClient
 from pyraksamp import _core
+from pyraksamp._bus import _EventBus
+from pyraksamp._bridge import _CallbackBridge
+from pyraksamp._streams import _EventStreams
+from pyraksamp._actions import _Actions
 from pyraksamp.dialogs import (
     AnyDialog,
     MsgboxDialog,
@@ -248,34 +251,6 @@ RPC_WORLD_VEHICLE_REMOVE = _core.RPC_WORLD_VEHICLE_REMOVE
 RPC_DEATH_BROADCAST = _core.RPC_DEATH_BROADCAST
 
 
-
-
-# Return a filter callable(obj)->bool, or None if no filtering is requested.
-def _make_obj_filter(predicate, kwargs):
-    kw = {k: v for k, v in kwargs.items() if v is not None}
-    if predicate is None and not kw:
-        return None
-
-    def filt(obj):
-        if predicate is not None and not predicate(obj):
-            return False
-        return all(getattr(obj, k) == v for k, v in kw.items())
-
-    return filt
-
-
-# Wrap a single-arg event callback with a predicate guard.
-def _wrap_obj(fn, filt):
-    async def wrapper(obj):
-        if filt(obj):
-            if asyncio.iscoroutinefunction(fn):
-                await fn(obj)
-            else:
-                fn(obj)
-
-    return wrapper
-
-
 def gen_gpci() -> str:
     """Generate a random valid GPCI (hex string divisible by 1001, 35–49 chars)."""
     factor = 1001
@@ -329,548 +304,56 @@ class SAMPBot:
         if not gpci:
             gpci = gen_gpci()
         self._client = _SAMPClient(host, port, nickname, password, gpci)
-        self._loop: asyncio.AbstractEventLoop | None = None
+        self._bus = _EventBus()
+        self._bridge = _CallbackBridge(self._client, self._bus)
+        self._streams = _EventStreams(self._bus)
+        self._actions = _Actions(self._client)
 
-        # Fan-out subscriber queues.  Each active rpcs()/events() call appends
-        # its own queue here; _broadcast() copies every event to all of them so
-        # concurrent consumers are fully independent (no event stealing).
-        # Accessed only from the event-loop thread (via call_soon_threadsafe),
-        # so no additional locking is required.
-        self._subscribers: list[asyncio.Queue] = []
+    # ── Connection lifecycle ───────────────────────────────────────────────────
 
-        # User-registered callbacks (set via decorators or direct assignment).
-        # Connection
-        self._cb_connect: object = None
-        self._cb_disconnect: object = None
-        # Raw
-        self._cb_rpc: object = None
-        # Player roster
-        self._cb_player_join: object = None
-        self._cb_player_quit: object = None
-        # Chat
-        self._cb_chat: object = None
-        self._cb_client_message: object = None
-        # Dialogs
-        self._cb_dialog: object = None
-        # HUD
-        self._cb_game_text: object = None
-        # Player state
-        self._cb_set_health: object = None
-        self._cb_set_armour: object = None
-        self._cb_set_position: object = None
-        # World
-        self._cb_checkpoint: object = None
-        self._cb_checkpoint_disabled: object = None
-        # Proximity
-        self._cb_player_streamed_in: object = None
-        self._cb_player_streamed_out: object = None
-        # Player info
-        self._cb_player_name: object = None
-        self._cb_toggle_controllable: object = None
-        self._cb_player_time: object = None
-        self._cb_death_message: object = None
-        self._cb_set_armed_weapon: object = None
-        self._cb_spawn_info: object = None
-        self._cb_player_team: object = None
-        self._cb_put_in_vehicle: object = None
-        self._cb_remove_from_vehicle: object = None
-        self._cb_player_color: object = None
-        self._cb_world_time: object = None
-        self._cb_toggle_spectating: object = None
-        self._cb_wanted_level: object = None
-        self._cb_weapon_ammo: object = None
-        self._cb_gravity: object = None
-        self._cb_weather: object = None
-        self._cb_player_skin: object = None
-        self._cb_set_interior: object = None
-        self._cb_vehicle_streamed_in: object = None
-        self._cb_vehicle_streamed_out: object = None
-        self._cb_player_death: object = None
+    async def start(self, timeout: float = 15.0) -> bool:
+        """Connect and start the background receive/keepalive thread.
 
-    # ── Internal: async bridge ─────────────────────────────────────────────────
+        Parameters
+        ----------
+        timeout
+            Maximum seconds to wait for the connection to be accepted.
 
-    # Fan an event out to every active subscriber queue.
-    # Always called from inside the event loop (via call_soon_threadsafe).
-    def _broadcast(self, event: tuple) -> None:
-        for q in self._subscribers:
-            q.put_nowait(event)
+        Returns
+        -------
+            ``True`` if connected, ``False`` on timeout or rejection.
+        """
+        loop = asyncio.get_running_loop()
+        self._bridge.setup(loop)
+        return await loop.run_in_executor(None, lambda: self._client.start(timeout))
 
-    # Call a user callback (sync or async def) from the event loop thread.
-    def _fire(self, cb, *args) -> None:
-        if cb is None:
-            return
-        if asyncio.iscoroutinefunction(cb):
-            asyncio.create_task(cb(*args))
-        else:
-            cb(*args)
+    async def disconnect(self) -> None:
+        """Send disconnect notification and stop the receive loop."""
+        self._client.disconnect()
 
-    # Wire Rust callbacks → asyncio event loop.
-    # The Rust run() thread invokes these with the GIL held; we must not block.
-    # All work is scheduled onto the loop via call_soon_threadsafe so that both
-    # the broadcast and user callback execute in the event loop thread.
-    def _setup_callbacks(self, loop: asyncio.AbstractEventLoop) -> None:
+    def stop(self) -> None:
+        """Signal the receive loop to stop without sending a disconnect packet."""
+        self._client.stop()
 
-        def on_connect():
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("connect",)),
-                    self._fire(self._cb_connect),
-                )
-            )
+    # ── State ──────────────────────────────────────────────────────────────────
 
-        def on_disconnect():
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("disconnect",)),
-                    self._fire(self._cb_disconnect),
-                )
-            )
+    @property
+    def is_connected(self) -> bool:
+        """True if the client is currently connected to the server."""
+        return self._client.is_connected
 
-        def on_rpc(rpc_id: int, data: bytes):
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("rpc", rpc_id, data)),
-                    self._fire(self._cb_rpc, rpc_id, data),
-                )
-            )
+    @property
+    def player_id(self) -> int:
+        """The bot's player ID assigned by the server, or -1 before the connection is accepted."""
+        return self._client.player_id
 
-        def on_player_join(pid: int, name: str):
-            evt = PlayerJoin(player_id=pid, name=name)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("player_join", evt)),
-                    self._fire(self._cb_player_join, evt),
-                )
-            )
-
-        def on_player_quit(pid: int, reason: int):
-            evt = PlayerQuit(player_id=pid, reason=reason)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("player_quit", evt)),
-                    self._fire(self._cb_player_quit, evt),
-                )
-            )
-
-        def on_chat(pid: int, text: str):
-            evt = ChatMessage(player_id=pid, text=text)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("chat", evt)),
-                    self._fire(self._cb_chat, evt),
-                )
-            )
-
-        def on_client_message(color: int, text: str):
-            evt = ServerMessage(color=color, text=text)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("client_message", evt)),
-                    self._fire(self._cb_client_message, evt),
-                )
-            )
-
-        def on_dialog(
-            did: int, style: int, title: str, btn1: str, btn2: str, body: str
-        ):
-            evt = _make_dialog(did, style, title, btn1, btn2, body, self)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("dialog", evt)),
-                    self._fire(self._cb_dialog, evt),
-                )
-            )
-
-        def on_game_text(style: int, ms: int, text: str):
-            evt = GameText(style=style, duration_ms=ms, text=text)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("game_text", evt)),
-                    self._fire(self._cb_game_text, evt),
-                )
-            )
-
-        def on_set_health(hp: float):
-            evt = SetHealth(health=hp)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("set_health", evt)),
-                    self._fire(self._cb_set_health, evt),
-                )
-            )
-
-        def on_set_armour(arm: float):
-            evt = SetArmour(armour=arm)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("set_armour", evt)),
-                    self._fire(self._cb_set_armour, evt),
-                )
-            )
-
-        def on_set_position(x: float, y: float, z: float):
-            evt = SetPosition(x=x, y=y, z=z)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("set_position", evt)),
-                    self._fire(self._cb_set_position, evt),
-                )
-            )
-
-        def on_checkpoint(x: float, y: float, z: float, size: float):
-            evt = Checkpoint(x=x, y=y, z=z, size=size)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("checkpoint", evt)),
-                    self._fire(self._cb_checkpoint, evt),
-                )
-            )
-
-        def on_checkpoint_disabled():
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("checkpoint_disabled",)),
-                    self._fire(self._cb_checkpoint_disabled),
-                )
-            )
-
-        def on_player_streamed_in(
-            pid: int,
-            team: int,
-            skin: int,
-            x: float,
-            y: float,
-            z: float,
-            rot: float,
-            color: int,
-            fs: int,
-        ):
-            evt = PlayerStreamIn(
-                player_id=pid,
-                team=team,
-                skin=skin,
-                x=x,
-                y=y,
-                z=z,
-                rotation=rot,
-                color=color,
-                fight_style=fs,
-            )
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("player_streamed_in", evt)),
-                    self._fire(self._cb_player_streamed_in, evt),
-                )
-            )
-
-        def on_player_streamed_out(pid: int):
-            evt = PlayerStreamOut(player_id=pid)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("player_streamed_out", evt)),
-                    self._fire(self._cb_player_streamed_out, evt),
-                )
-            )
-
-        def on_player_name(pid: int, name: str, success: int):
-            evt = PlayerNameChange(player_id=pid, name=name, success=success)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("player_name", evt)),
-                    self._fire(self._cb_player_name, evt),
-                )
-            )
-
-        def on_toggle_controllable(moveable: int):
-            evt = ToggleControllable(moveable=moveable)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("toggle_controllable", evt)),
-                    self._fire(self._cb_toggle_controllable, evt),
-                )
-            )
-
-        def on_player_time(hour: int, minute: int):
-            evt = PlayerTime(hour=hour, minute=minute)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("player_time", evt)),
-                    self._fire(self._cb_player_time, evt),
-                )
-            )
-
-        def on_death_message(killer_id: int, player_id: int, weapon: int):
-            evt = DeathMessage(killer_id=killer_id, player_id=player_id, weapon=weapon)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("death_message", evt)),
-                    self._fire(self._cb_death_message, evt),
-                )
-            )
-
-        def on_set_armed_weapon(weapon_id: int):
-            evt = SetArmedWeapon(weapon_id=weapon_id)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("set_armed_weapon", evt)),
-                    self._fire(self._cb_set_armed_weapon, evt),
-                )
-            )
-
-        def on_spawn_info(
-            team: int,
-            skin: int,
-            x: float,
-            y: float,
-            z: float,
-            rot: float,
-            w1: int,
-            w2: int,
-            w3: int,
-            a1: int,
-            a2: int,
-            a3: int,
-        ):
-            evt = SpawnInfo(
-                team=team,
-                skin=skin,
-                x=x,
-                y=y,
-                z=z,
-                rotation=rot,
-                weapons=(w1, w2, w3),
-                ammo=(a1, a2, a3),
-            )
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("spawn_info", evt)),
-                    self._fire(self._cb_spawn_info, evt),
-                )
-            )
-
-        def on_player_team(pid: int, team: int):
-            evt = PlayerTeam(player_id=pid, team=team)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("player_team", evt)),
-                    self._fire(self._cb_player_team, evt),
-                )
-            )
-
-        def on_put_in_vehicle(vehicle_id: int, seat_id: int):
-            evt = PutInVehicle(vehicle_id=vehicle_id, seat_id=seat_id)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("put_in_vehicle", evt)),
-                    self._fire(self._cb_put_in_vehicle, evt),
-                )
-            )
-
-        def on_remove_from_vehicle():
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("remove_from_vehicle",)),
-                    self._fire(self._cb_remove_from_vehicle),
-                )
-            )
-
-        def on_player_color(pid: int, color: int):
-            evt = PlayerColor(player_id=pid, color=color)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("player_color", evt)),
-                    self._fire(self._cb_player_color, evt),
-                )
-            )
-
-        def on_world_time(hour: int):
-            evt = WorldTime(hour=hour)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("world_time", evt)),
-                    self._fire(self._cb_world_time, evt),
-                )
-            )
-
-        def on_toggle_spectating(spectating: bool):
-            evt = ToggleSpectating(spectating=spectating)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("toggle_spectating", evt)),
-                    self._fire(self._cb_toggle_spectating, evt),
-                )
-            )
-
-        def on_wanted_level(level: int):
-            evt = WantedLevel(level=level)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("wanted_level", evt)),
-                    self._fire(self._cb_wanted_level, evt),
-                )
-            )
-
-        def on_weapon_ammo(weapon_id: int, ammo: int):
-            evt = WeaponAmmo(weapon_id=weapon_id, ammo=ammo)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("weapon_ammo", evt)),
-                    self._fire(self._cb_weapon_ammo, evt),
-                )
-            )
-
-        def on_gravity(gravity: float):
-            evt = Gravity(gravity=gravity)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("gravity", evt)),
-                    self._fire(self._cb_gravity, evt),
-                )
-            )
-
-        def on_weather(weather_id: int):
-            evt = Weather(weather_id=weather_id)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("weather", evt)),
-                    self._fire(self._cb_weather, evt),
-                )
-            )
-
-        def on_player_skin(pid: int, skin_id: int):
-            evt = PlayerSkin(player_id=pid, skin_id=skin_id)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("player_skin", evt)),
-                    self._fire(self._cb_player_skin, evt),
-                )
-            )
-
-        def on_set_interior(interior_id: int):
-            evt = SetInterior(interior_id=interior_id)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("set_interior", evt)),
-                    self._fire(self._cb_set_interior, evt),
-                )
-            )
-
-        def on_vehicle_streamed_in(
-            vid: int,
-            model: int,
-            x: float,
-            y: float,
-            z: float,
-            angle: float,
-            color1: int,
-            color2: int,
-            health: float,
-            interior: int,
-            door_dmg: int,
-            panel_dmg: int,
-            light_dmg: int,
-            tire_dmg: int,
-            add_siren: int,
-            paintjob: int,
-            body_color1: int,
-            body_color2: int,
-        ):
-            evt = VehicleStreamIn(
-                vehicle_id=vid,
-                model=model,
-                x=x,
-                y=y,
-                z=z,
-                angle=angle,
-                color1=color1,
-                color2=color2,
-                health=health,
-                interior=interior,
-                door_damage=door_dmg,
-                panel_damage=panel_dmg,
-                light_damage=light_dmg,
-                tire_damage=tire_dmg,
-                add_siren=bool(add_siren),
-                paintjob=paintjob,
-                body_color1=body_color1,
-                body_color2=body_color2,
-            )
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("vehicle_streamed_in", evt)),
-                    self._fire(self._cb_vehicle_streamed_in, evt),
-                )
-            )
-
-        def on_vehicle_streamed_out(vid: int):
-            evt = VehicleStreamOut(vehicle_id=vid)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("vehicle_streamed_out", evt)),
-                    self._fire(self._cb_vehicle_streamed_out, evt),
-                )
-            )
-
-        def on_player_death(pid: int):
-            evt = PlayerDeath(player_id=pid)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    self._broadcast(("player_death", evt)),
-                    self._fire(self._cb_player_death, evt),
-                )
-            )
-
-        self._client.on_connect = on_connect
-        self._client.on_disconnect = on_disconnect
-        self._client.on_rpc = on_rpc
-        self._client.on_player_join = on_player_join
-        self._client.on_player_quit = on_player_quit
-        self._client.on_chat = on_chat
-        self._client.on_client_message = on_client_message
-        self._client.on_dialog = on_dialog
-        self._client.on_game_text = on_game_text
-        self._client.on_set_health = on_set_health
-        self._client.on_set_armour = on_set_armour
-        self._client.on_set_position = on_set_position
-        self._client.on_checkpoint = on_checkpoint
-        self._client.on_checkpoint_disabled = on_checkpoint_disabled
-        self._client.on_player_streamed_in = on_player_streamed_in
-        self._client.on_player_streamed_out = on_player_streamed_out
-        self._client.on_player_name = on_player_name
-        self._client.on_toggle_controllable = on_toggle_controllable
-        self._client.on_player_time = on_player_time
-        self._client.on_death_message = on_death_message
-        self._client.on_set_armed_weapon = on_set_armed_weapon
-        self._client.on_spawn_info = on_spawn_info
-        self._client.on_player_team = on_player_team
-        self._client.on_put_in_vehicle = on_put_in_vehicle
-        self._client.on_remove_from_vehicle = on_remove_from_vehicle
-        self._client.on_player_color = on_player_color
-        self._client.on_world_time = on_world_time
-        self._client.on_toggle_spectating = on_toggle_spectating
-        self._client.on_wanted_level = on_wanted_level
-        self._client.on_weapon_ammo = on_weapon_ammo
-        self._client.on_gravity = on_gravity
-        self._client.on_weather = on_weather
-        self._client.on_player_skin = on_player_skin
-        self._client.on_set_interior = on_set_interior
-        self._client.on_vehicle_streamed_in = on_vehicle_streamed_in
-        self._client.on_vehicle_streamed_out = on_vehicle_streamed_out
-        self._client.on_player_death = on_player_death
-
-    # ── Decorator-style callbacks ──────────────────────────────────────────────
-    # Each decorator accepts both plain functions and async def coroutines.
-    # Typed callbacks receive the corresponding dataclass instance as first arg.
+    # ── Delegation: on_* decorators → _bus ────────────────────────────────────
 
     def on_connect[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the client connects."""
-        self._cb_connect = fn
-        return fn
+        return self._bus.on_connect(fn)
 
     def on_disconnect[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the client disconnects."""
-        self._cb_disconnect = fn
-        return fn
+        return self._bus.on_disconnect(fn)
 
     def on_rpc[F: Callable](
         self,
@@ -879,37 +362,7 @@ class SAMPBot:
         rpc_id: int | None = None,
         predicate: Callable[[int, bytes], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        """Register a callback invoked for every incoming RPC.
-
-        Parameters
-        ----------
-        rpc_id
-            If given, only invoke the callback for RPCs with this ID.
-        predicate
-            Additional filter; called with ``(rpc_id, data)``.
-        """
-
-        def decorator(f):
-            if rpc_id is not None or predicate is not None:
-
-                async def wrapper(rid, data):
-                    if rpc_id is not None and rid != rpc_id:
-                        return
-                    if predicate is not None and not predicate(rid, data):
-                        return
-                    if asyncio.iscoroutinefunction(f):
-                        await f(rid, data)
-                    else:
-                        f(rid, data)
-
-                self._cb_rpc = wrapper
-            else:
-                self._cb_rpc = f
-            return f
-
-        if fn is not None:
-            return decorator(fn)
-        return decorator
+        return self._bus.on_rpc(fn, rpc_id=rpc_id, predicate=predicate)
 
     def on_player_join[F: Callable](
         self,
@@ -919,26 +372,7 @@ class SAMPBot:
         name: str | None = None,
         predicate: Callable[[PlayerJoin], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        """Register a callback invoked when a player joins.
-
-        Parameters
-        ----------
-        player_id
-            Only invoke when this player's ID matches.
-        name
-            Only invoke when the player's name matches.
-        predicate
-            Additional filter; called with the event.
-        """
-
-        def decorator(f):
-            filt = _make_obj_filter(predicate, {"player_id": player_id, "name": name})
-            self._cb_player_join = _wrap_obj(f, filt) if filt else f
-            return f
-
-        if fn is not None:
-            return decorator(fn)
-        return decorator
+        return self._bus.on_player_join(fn, player_id=player_id, name=name, predicate=predicate)
 
     def on_player_quit[F: Callable](
         self,
@@ -947,24 +381,7 @@ class SAMPBot:
         player_id: int | None = None,
         predicate: Callable[[PlayerQuit], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        """Register a callback invoked when a player disconnects.
-
-        Parameters
-        ----------
-        player_id
-            Only invoke when this player's ID matches.
-        predicate
-            Additional filter; called with the event.
-        """
-
-        def decorator(f):
-            filt = _make_obj_filter(predicate, {"player_id": player_id})
-            self._cb_player_quit = _wrap_obj(f, filt) if filt else f
-            return f
-
-        if fn is not None:
-            return decorator(fn)
-        return decorator
+        return self._bus.on_player_quit(fn, player_id=player_id, predicate=predicate)
 
     def on_chat[F: Callable](
         self,
@@ -973,24 +390,7 @@ class SAMPBot:
         player_id: int | None = None,
         predicate: Callable[[ChatMessage], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        """Register a callback invoked for public chat messages.
-
-        Parameters
-        ----------
-        player_id
-            Only invoke when the sender's player ID matches.
-        predicate
-            Additional filter; e.g. ``lambda e: e.text.startswith("!")``.
-        """
-
-        def decorator(f):
-            filt = _make_obj_filter(predicate, {"player_id": player_id})
-            self._cb_chat = _wrap_obj(f, filt) if filt else f
-            return f
-
-        if fn is not None:
-            return decorator(fn)
-        return decorator
+        return self._bus.on_chat(fn, player_id=player_id, predicate=predicate)
 
     def on_client_message[F: Callable](
         self,
@@ -999,24 +399,7 @@ class SAMPBot:
         color: int | None = None,
         predicate: Callable[[ServerMessage], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        """Register a callback invoked for server messages (SendClientMessage).
-
-        Parameters
-        ----------
-        color
-            Only invoke when the message color matches (e.g. ``0xFF0000FF``).
-        predicate
-            Additional filter; called with the event.
-        """
-
-        def decorator(f):
-            filt = _make_obj_filter(predicate, {"color": color})
-            self._cb_client_message = _wrap_obj(f, filt) if filt else f
-            return f
-
-        if fn is not None:
-            return decorator(fn)
-        return decorator
+        return self._bus.on_client_message(fn, color=color, predicate=predicate)
 
     @overload
     def on_dialog(
@@ -1042,32 +425,7 @@ class SAMPBot:
         predicate: Callable[[D], bool] | None = None,
         dialog_id: int | None = None,
     ) -> Callable[[Any], Any]:
-        """Register a callback invoked when a dialog is shown.
-
-        Parameters
-        ----------
-        dialog_type
-            Only invoke for dialogs of this type (e.g. ``InputDialog``).
-        dialog_id
-            Only invoke for dialogs with this ID.
-        predicate
-            Additional filter; called with the dialog object.
-        """
-
-        def decorator(f: Callable[[D], Any]) -> Callable[[D], Any]:
-            type_pred = (lambda obj: isinstance(obj, dialog_type)) if dialog_type is not None else None
-            if type_pred is not None and predicate is not None:
-                _p = predicate
-                combined: Callable[[D], bool] | None = lambda obj: type_pred(obj) and _p(obj)
-            else:
-                combined = type_pred or predicate
-            filt = _make_obj_filter(combined, {"dialog_id": dialog_id})
-            self._cb_dialog = _wrap_obj(f, filt) if filt else f
-            return f
-
-        if fn is not None:
-            return decorator(fn)
-        return decorator
+        return self._bus.on_dialog(fn, dialog_type=dialog_type, predicate=predicate, dialog_id=dialog_id)
 
     def on_game_text[F: Callable](
         self,
@@ -1076,401 +434,164 @@ class SAMPBot:
         style: int | None = None,
         predicate: Callable[[GameText], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        """Register a callback invoked for ShowGameText.
-
-        Parameters
-        ----------
-        style
-            Only invoke when the text style matches.
-        predicate
-            Additional filter; called with the event.
-        """
-
-        def decorator(f):
-            filt = _make_obj_filter(predicate, {"style": style})
-            self._cb_game_text = _wrap_obj(f, filt) if filt else f
-            return f
-
-        if fn is not None:
-            return decorator(fn)
-        return decorator
+        return self._bus.on_game_text(fn, style=style, predicate=predicate)
 
     def on_set_health[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server sets our health."""
-        self._cb_set_health = fn
-        return fn
+        return self._bus.on_set_health(fn)
 
     def on_set_armour[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server sets our armour."""
-        self._cb_set_armour = fn
-        return fn
+        return self._bus.on_set_armour(fn)
 
     def on_set_position[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server teleports us."""
-        self._cb_set_position = fn
-        return fn
+        return self._bus.on_set_position(fn)
 
     def on_checkpoint[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server sets a checkpoint."""
-        self._cb_checkpoint = fn
-        return fn
+        return self._bus.on_checkpoint(fn)
 
     def on_checkpoint_disabled[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the checkpoint is disabled."""
-        self._cb_checkpoint_disabled = fn
-        return fn
+        return self._bus.on_checkpoint_disabled(fn)
 
     def on_player_streamed_in[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when a player streams into proximity."""
-        self._cb_player_streamed_in = fn
-        return fn
+        return self._bus.on_player_streamed_in(fn)
 
     def on_player_streamed_out[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when a player streams out of proximity."""
-        self._cb_player_streamed_out = fn
-        return fn
+        return self._bus.on_player_streamed_out(fn)
 
     def on_player_name[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when a player's name changes."""
-        self._cb_player_name = fn
-        return fn
+        return self._bus.on_player_name(fn)
 
     def on_toggle_controllable[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server toggles our controllable state."""
-        self._cb_toggle_controllable = fn
-        return fn
+        return self._bus.on_toggle_controllable(fn)
 
     def on_player_time[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server sets the player time."""
-        self._cb_player_time = fn
-        return fn
+        return self._bus.on_player_time(fn)
 
     def on_death_message[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when a death message is broadcast."""
-        self._cb_death_message = fn
-        return fn
+        return self._bus.on_death_message(fn)
 
     def on_set_armed_weapon[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server sets our armed weapon."""
-        self._cb_set_armed_weapon = fn
-        return fn
+        return self._bus.on_set_armed_weapon(fn)
 
     def on_spawn_info[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server sends spawn info."""
-        self._cb_spawn_info = fn
-        return fn
+        return self._bus.on_spawn_info(fn)
 
     def on_player_team[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when a player's team is set."""
-        self._cb_player_team = fn
-        return fn
+        return self._bus.on_player_team(fn)
 
     def on_put_in_vehicle[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when we are put in a vehicle."""
-        self._cb_put_in_vehicle = fn
-        return fn
+        return self._bus.on_put_in_vehicle(fn)
 
     def on_remove_from_vehicle[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when we are removed from a vehicle."""
-        self._cb_remove_from_vehicle = fn
-        return fn
+        return self._bus.on_remove_from_vehicle(fn)
 
     def on_player_color[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when a player's color is set."""
-        self._cb_player_color = fn
-        return fn
+        return self._bus.on_player_color(fn)
 
     def on_world_time[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server sets the world time."""
-        self._cb_world_time = fn
-        return fn
+        return self._bus.on_world_time(fn)
 
     def on_toggle_spectating[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server toggles spectating mode."""
-        self._cb_toggle_spectating = fn
-        return fn
+        return self._bus.on_toggle_spectating(fn)
 
     def on_wanted_level[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server sets our wanted level."""
-        self._cb_wanted_level = fn
-        return fn
+        return self._bus.on_wanted_level(fn)
 
     def on_weapon_ammo[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server sets weapon ammo."""
-        self._cb_weapon_ammo = fn
-        return fn
+        return self._bus.on_weapon_ammo(fn)
 
     def on_gravity[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server sets world gravity."""
-        self._cb_gravity = fn
-        return fn
+        return self._bus.on_gravity(fn)
 
     def on_weather[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server sets the weather."""
-        self._cb_weather = fn
-        return fn
+        return self._bus.on_weather(fn)
 
     def on_player_skin[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when a player's skin is set."""
-        self._cb_player_skin = fn
-        return fn
+        return self._bus.on_player_skin(fn)
 
     def on_set_interior[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when the server sets our interior."""
-        self._cb_set_interior = fn
-        return fn
+        return self._bus.on_set_interior(fn)
 
     def on_vehicle_streamed_in[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when a vehicle streams into proximity."""
-        self._cb_vehicle_streamed_in = fn
-        return fn
+        return self._bus.on_vehicle_streamed_in(fn)
 
     def on_vehicle_streamed_out[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when a vehicle streams out of proximity."""
-        self._cb_vehicle_streamed_out = fn
-        return fn
+        return self._bus.on_vehicle_streamed_out(fn)
 
     def on_player_death[F: Callable](self, fn: F) -> F:
-        """Register a callback invoked when a player death is broadcast."""
-        self._cb_player_death = fn
-        return fn
+        return self._bus.on_player_death(fn)
 
-    # ── Connection lifecycle ───────────────────────────────────────────────────
+    # ── Delegation: streams → _streams ────────────────────────────────────────
 
-    async def start(self, timeout: float = 15.0) -> bool:
-        """Connect and start the background receive/keepalive thread.
+    def rpcs(self, rpc_id: int | None = None):
+        return self._streams.rpcs(rpc_id)
 
-        Parameters
-        ----------
-        timeout
-            Maximum seconds to wait for the connection to be accepted.
-
-        Returns
-        -------
-            ``True`` if connected, ``False`` on timeout or rejection.
-        """
-        loop = asyncio.get_running_loop()
-        self._loop = loop
-        self._setup_callbacks(loop)
-        return await loop.run_in_executor(None, lambda: self._client.start(timeout))
-
-    async def disconnect(self) -> None:
-        """Send disconnect notification and stop the receive loop."""
-        self._client.disconnect()
-
-    def stop(self) -> None:
-        """Signal the receive loop to stop without sending a disconnect packet."""
-        self._client.stop()
-
-    # ── Generic event streams ──────────────────────────────────────────────────
-
-    async def rpcs(self, rpc_id: int | None = None):
-        """Async generator yielding ``(rpc_id, data)`` for raw RPCs.
-
-        Each call creates an independent subscriber; concurrent consumers all
-        receive every event (fan-out, no stealing).
-
-        Parameters
-        ----------
-        rpc_id
-            If given, yield only RPCs matching this ID.
-
-        See Also
-        --------
-        events : Low-level generator that yields all event tuples.
-        wait_for_rpc : Await a single matching RPC.
-        """
-        q: asyncio.Queue = asyncio.Queue()
-        self._subscribers.append(q)
-        try:
-            while True:
-                event = await q.get()
-                if event[0] == "disconnect":
-                    return
-                if event[0] == "rpc":
-                    rid, data = event[1], event[2]
-                    if rpc_id is None or rid == rpc_id:
-                        yield rid, data
-        finally:
-            self._subscribers.remove(q)
-
-    async def events(self):
-        """Async generator that yields every event as a tuple.
-
-        Event tags and payloads:
-
-        - ``('connect',)``
-        - ``('disconnect',)``
-        - ``('rpc', rpc_id, data)``                  raw bytes escape hatch
-        - ``('player_join', PlayerJoin)``
-        - ``('player_quit', PlayerQuit)``
-        - ``('chat', ChatMessage)``
-        - ``('client_message', ServerMessage)``
-        - ``('dialog', AnyDialog)``
-        - ``('game_text', GameText)``
-        - ``('set_health', SetHealth)``
-        - ``('set_armour', SetArmour)``
-        - ``('set_position', SetPosition)``
-        - ``('checkpoint', Checkpoint)``
-        - ``('checkpoint_disabled',)``
-        - ``('player_streamed_in', PlayerStreamIn)``
-        - ``('player_streamed_out', PlayerStreamOut)``
-        - ``('player_name', PlayerNameChange)``
-        - ``('toggle_controllable', ToggleControllable)``
-        - ``('player_time', PlayerTime)``
-        - ``('death_message', DeathMessage)``
-        - ``('set_armed_weapon', SetArmedWeapon)``
-        - ``('spawn_info', SpawnInfo)``
-        - ``('player_team', PlayerTeam)``
-        - ``('put_in_vehicle', PutInVehicle)``
-        - ``('remove_from_vehicle',)``
-        - ``('player_color', PlayerColor)``
-        - ``('world_time', WorldTime)``
-        - ``('toggle_spectating', ToggleSpectating)``
-        - ``('wanted_level', WantedLevel)``
-        - ``('weapon_ammo', WeaponAmmo)``
-        - ``('gravity', Gravity)``
-        - ``('weather', Weather)``
-        - ``('player_skin', PlayerSkin)``
-        - ``('set_interior', SetInterior)``
-        - ``('vehicle_streamed_in', VehicleStreamIn)``
-        - ``('vehicle_streamed_out', VehicleStreamOut)``
-        - ``('player_death', PlayerDeath)``
-
-        Stops after yielding ``('disconnect',)``.
-
-        See Also
-        --------
-        rpcs : Specialized generator for raw RPCs.
-        chat : Typed generator for chat messages.
-        dialogs : Typed generator for dialogs.
-        """
-        q: asyncio.Queue = asyncio.Queue()
-        self._subscribers.append(q)
-        try:
-            while True:
-                event = await q.get()
-                yield event
-                if event[0] == "disconnect":
-                    return
-        finally:
-            self._subscribers.remove(q)
-
-    # ── Typed async generators ─────────────────────────────────────────────────
-
-    # Yield the payload object for events matching `tag`.
-    async def _typed_gen(self, tag: str):
-        q: asyncio.Queue = asyncio.Queue()
-        self._subscribers.append(q)
-        try:
-            while True:
-                event = await q.get()
-                if event[0] == "disconnect":
-                    return
-                if event[0] == tag:
-                    yield event[1]
-        finally:
-            self._subscribers.remove(q)
+    def events(self):
+        return self._streams.events()
 
     def chat(self):
-        """Async generator yielding ChatMessage for each public chat message."""
-        return self._typed_gen("chat")
+        return self._streams.chat()
 
     def server_messages(self):
-        """Async generator yielding ServerMessage for each client message."""
-        return self._typed_gen("client_message")
+        return self._streams.server_messages()
 
     def dialogs(self):
-        """Async generator yielding AnyDialog each time a dialog is shown."""
-        return self._typed_gen("dialog")
+        return self._streams.dialogs()
 
     def game_texts(self):
-        """Async generator yielding GameText for each ShowGameText."""
-        return self._typed_gen("game_text")
+        return self._streams.game_texts()
 
     def player_joins(self):
-        """Async generator yielding PlayerJoin for each connecting player."""
-        return self._typed_gen("player_join")
+        return self._streams.player_joins()
 
     def player_quits(self):
-        """Async generator yielding PlayerQuit for each disconnecting player."""
-        return self._typed_gen("player_quit")
+        return self._streams.player_quits()
 
     def player_stream_ins(self):
-        """Async generator yielding PlayerStreamIn."""
-        return self._typed_gen("player_streamed_in")
+        return self._streams.player_stream_ins()
 
     def player_stream_outs(self):
-        """Async generator yielding PlayerStreamOut."""
-        return self._typed_gen("player_streamed_out")
+        return self._streams.player_stream_outs()
 
     def player_name_changes(self):
-        """Async generator yielding PlayerNameChange."""
-        return self._typed_gen("player_name")
+        return self._streams.player_name_changes()
 
     def death_messages(self):
-        """Async generator yielding DeathMessage."""
-        return self._typed_gen("death_message")
+        return self._streams.death_messages()
 
     def spawn_infos(self):
-        """Async generator yielding SpawnInfo."""
-        return self._typed_gen("spawn_info")
+        return self._streams.spawn_infos()
 
     def put_in_vehicles(self):
-        """Async generator yielding PutInVehicle."""
-        return self._typed_gen("put_in_vehicle")
+        return self._streams.put_in_vehicles()
 
     def player_colors(self):
-        """Async generator yielding PlayerColor."""
-        return self._typed_gen("player_color")
+        return self._streams.player_colors()
 
     def weather_changes(self):
-        """Async generator yielding Weather."""
-        return self._typed_gen("weather")
+        return self._streams.weather_changes()
 
     def gravity_changes(self):
-        """Async generator yielding Gravity."""
-        return self._typed_gen("gravity")
+        return self._streams.gravity_changes()
 
     def player_skins(self):
-        """Async generator yielding PlayerSkin."""
-        return self._typed_gen("player_skin")
+        return self._streams.player_skins()
 
     def interior_changes(self):
-        """Async generator yielding SetInterior."""
-        return self._typed_gen("set_interior")
+        return self._streams.interior_changes()
 
     def vehicle_stream_ins(self):
-        """Async generator yielding VehicleStreamIn."""
-        return self._typed_gen("vehicle_streamed_in")
+        return self._streams.vehicle_stream_ins()
 
     def vehicle_stream_outs(self):
-        """Async generator yielding VehicleStreamOut."""
-        return self._typed_gen("vehicle_streamed_out")
+        return self._streams.vehicle_stream_outs()
 
     def player_deaths(self):
-        """Async generator yielding PlayerDeath."""
-        return self._typed_gen("player_death")
+        return self._streams.player_deaths()
 
     async def wait_for_rpc(
         self, rpc_id: int, *, predicate: Callable[[int, bytes], bool] | None = None
     ) -> bytes:
-        """Await the next RPC with the given ID.
-
-        Parameters
-        ----------
-        rpc_id
-            The RPC ID to wait for.
-        predicate
-            Optional additional filter; called with ``(rpc_id, data)``.
-
-        Returns
-        -------
-            Raw payload bytes of the matching RPC.
-        """
-        async for _, data in self.rpcs(rpc_id=rpc_id):
-            if predicate is None or predicate(rpc_id, data):
-                return data
+        return await self._streams.wait_for_rpc(rpc_id, predicate=predicate)
 
     async def wait_for_dialog[D: (MsgboxDialog, InputDialog, PasswordDialog, ListDialog, TablistDialog, TablistHeadersDialog)](
         self,
@@ -1479,31 +600,7 @@ class SAMPBot:
         dialog_type: type[D] | None = None,
         dialog_id: int | None = None,
     ) -> D:
-        """Await the next dialog matching all given filters.
-
-        Parameters
-        ----------
-        predicate
-            Optional filter; called with the dialog object.
-        dialog_type
-            Only match dialogs of this type (e.g. ``InputDialog``).
-        dialog_id
-            Only match dialogs with this ID.
-
-        Returns
-        -------
-            The matched dialog.
-        """
-        type_pred = (lambda obj: isinstance(obj, dialog_type)) if dialog_type is not None else None
-        if type_pred is not None and predicate is not None:
-            _p = predicate
-            combined: Callable[[D], bool] | None = lambda obj: type_pred(obj) and _p(obj)
-        else:
-            combined = type_pred or predicate
-        filt = _make_obj_filter(combined, {"dialog_id": dialog_id})
-        async for dlg in self.dialogs():
-            if filt is None or filt(dlg):
-                return dlg  # type: ignore[return-value]
+        return await self._streams.wait_for_dialog(predicate, dialog_type=dialog_type, dialog_id=dialog_id)
 
     async def wait_for_chat(
         self,
@@ -1511,23 +608,7 @@ class SAMPBot:
         *,
         player_id: int | None = None,
     ) -> ChatMessage:
-        """Await the next public chat message matching all given filters.
-
-        Parameters
-        ----------
-        predicate
-            Optional filter; called with the message.
-        player_id
-            Only match messages from this player.
-
-        Returns
-        -------
-            The matched chat message.
-        """
-        filt = _make_obj_filter(predicate, {"player_id": player_id})
-        async for msg in self.chat():
-            if filt is None or filt(msg):
-                return msg
+        return await self._streams.wait_for_chat(predicate, player_id=player_id)
 
     async def wait_for_client_message(
         self,
@@ -1535,23 +616,7 @@ class SAMPBot:
         *,
         color: int | None = None,
     ) -> ServerMessage:
-        """Await the next server message matching all given filters.
-
-        Parameters
-        ----------
-        predicate
-            Optional filter; called with the message.
-        color
-            Only match messages with this color value.
-
-        Returns
-        -------
-            The matched server message.
-        """
-        filt = _make_obj_filter(predicate, {"color": color})
-        async for msg in self.server_messages():
-            if filt is None or filt(msg):
-                return msg
+        return await self._streams.wait_for_client_message(predicate, color=color)
 
     async def wait_for_player_join(
         self,
@@ -1560,83 +625,34 @@ class SAMPBot:
         player_id: int | None = None,
         name: str | None = None,
     ) -> PlayerJoin:
-        """Await the next player join matching all given filters.
+        return await self._streams.wait_for_player_join(predicate, player_id=player_id, name=name)
 
-        Parameters
-        ----------
-        predicate
-            Optional filter; called with the event.
-        player_id
-            Only match this player's ID.
-        name
-            Only match this player's name.
-
-        Returns
-        -------
-            The matched player join event.
-        """
-        filt = _make_obj_filter(predicate, {"player_id": player_id, "name": name})
-        async for evt in self.player_joins():
-            if filt is None or filt(evt):
-                return evt
-
-    # ── Game actions ───────────────────────────────────────────────────────────
-    # Sending a UDP packet is fast — no executor or await needed.
+    # ── Delegation: actions → _actions ────────────────────────────────────────
 
     def send_rpc(
         self, rpc_id: int, data: bytes = b"", reliability: int = RELIABLE
     ) -> bool:
-        """Send a raw RPC packet to the server.
-
-        Parameters
-        ----------
-        rpc_id
-            SA:MP RPC ID.
-        data
-            Raw payload bytes.
-        reliability
-            One of the module-level ``RELIABLE*`` / ``UNRELIABLE*`` constants.
-        """
-        return self._client.send_rpc(rpc_id, data, reliability)
+        return self._actions.send_rpc(rpc_id, data, reliability)
 
     def send_chat(self, message: str) -> None:
-        """Send a public chat message (RPC 101)."""
-        msg = message.encode("ascii", errors="replace")[:144]
-        self.send_rpc(RPC_CHAT, struct.pack("B", len(msg)) + msg)
+        return self._actions.send_chat(message)
 
     def send_dialog_response(
         self, dialog_id: int, button: int, list_item: int = 0, text: str = ""
     ) -> None:
-        """Respond to a dialog (SendDialogResponse)."""
-        self._client.send_dialog_response(dialog_id, button, list_item, text)
+        return self._actions.send_dialog_response(dialog_id, button, list_item, text)
 
     def send_death(self, weapon_id: int = 0, killer_id: int = 0xFFFF) -> None:
-        """Send a death notification (SendDeathMessage)."""
-        self._client.send_death(weapon_id, killer_id)
+        return self._actions.send_death(weapon_id, killer_id)
 
     def send_enter_vehicle(self, vehicle_id: int, is_passenger: bool = False) -> None:
-        """Notify the server we are entering a vehicle."""
-        self._client.send_enter_vehicle(vehicle_id, is_passenger)
+        return self._actions.send_enter_vehicle(vehicle_id, is_passenger)
 
     def send_exit_vehicle(self, vehicle_id: int) -> None:
-        """Notify the server we are exiting a vehicle."""
-        self._client.send_exit_vehicle(vehicle_id)
+        return self._actions.send_exit_vehicle(vehicle_id)
 
     def send_command(self, text: str) -> None:
-        """Send a slash command (e.g. '/stats') to the server (RPC 50)."""
-        self._client.send_command(text)
-
-    # ── State ──────────────────────────────────────────────────────────────────
-
-    @property
-    def is_connected(self) -> bool:
-        """True if the client is currently connected to the server."""
-        return self._client.is_connected
-
-    @property
-    def player_id(self) -> int:
-        """The bot's player ID assigned by the server, or -1 before the connection is accepted."""
-        return self._client.player_id
+        return self._actions.send_command(text)
 
 
 # Backwards-compatibility alias
