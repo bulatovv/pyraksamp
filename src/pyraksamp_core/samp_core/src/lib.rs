@@ -4,7 +4,7 @@ use pyraksamp_core::client::SampClient;
 
 // ── PySAMPClient ──────────────────────────────────────────────────────────────
 
-/// Stores original Python callables for getters.
+// Stores original Python callables for getters.
 struct PyCbs {
     on_connect:             Option<Py<PyAny>>,
     on_disconnect:          Option<Py<PyAny>>,
@@ -66,7 +66,7 @@ impl PyCbs {
     }
 }
 
-/// Wrap a Python callable into an Arc<dyn Fn()> that acquires the GIL when called.
+// Wrap a Python callable into an Arc<dyn Fn()> that acquires the GIL when called.
 macro_rules! wrap0 {
     ($py_obj:expr) => {{
         let cb: Py<PyAny> = $py_obj;

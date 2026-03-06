@@ -91,7 +91,6 @@ fn huffman_build() -> HuffTree {
     HuffTree { pool, root: sorted[0] }
 }
 
-// Thread-safe singleton using std::sync::OnceLock
 static HUFF_TREE: std::sync::OnceLock<HuffTree> = std::sync::OnceLock::new();
 
 fn huff_tree() -> &'static HuffTree {
@@ -109,7 +108,7 @@ pub struct BitStream {
 impl BitStream {
     pub fn new() -> Self {
         let mut buf = Vec::with_capacity(64);
-        buf.resize(8, 0u8); // initial capacity
+        buf.resize(8, 0u8);
         BitStream { buf, wpos: 0, rpos: 0 }
     }
 

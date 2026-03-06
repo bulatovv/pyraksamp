@@ -480,7 +480,6 @@ impl SampClient {
         let mut bs = BitStream::from_bytes(payload);
         let len = payload.len() as i32;
 
-        // Dispatch typed RPC
         let _ = (|| -> Option<()> {
             match rpc_id {
                 RPC_INIT_GAME => {
@@ -851,19 +850,16 @@ impl SampClient {
     // ─── Public API ───────────────────────────────────────────────────────────
 
     pub fn connect(&self, timeout_sec: f64) -> bool {
-        // DNS resolution
         let server_v4 = match resolve_host(&self.host, self.port) {
             Some(v) => v,
             None => return false,
         };
 
-        // Create UDP socket
         let sock = match UdpSocket::bind("0.0.0.0:0") {
             Ok(s) => s,
             Err(_) => return false,
         };
 
-        // Store net state
         {
             let mut guard = self.net.lock().unwrap();
             *guard = Some(NetState {
@@ -872,7 +868,6 @@ impl SampClient {
             });
         }
 
-        // Borrow the sock for connection phases
         let (sock_arc, _) = {
             let guard = self.net.lock().unwrap();
             let ns = guard.as_ref().unwrap();
@@ -1035,13 +1030,13 @@ fn resolve_host(host: &str, port: u16) -> Option<Ipv4Addr> {
     None
 }
 
-/// Receive a datagram from `server_v4` before `deadline`.
-/// Returns None only if deadline is reached without a matching packet.
+// Receive a datagram from `server_v4` before `deadline`.
+// Returns None only if deadline is reached without a matching packet.
 fn recv_deadline(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, deadline: Instant) -> Option<usize> {
     recv_deadline_cap(sock, buf, server_v4, deadline, Duration::from_secs(1))
 }
 
-/// Like recv_deadline but caps each poll to `cap`.
+// Like recv_deadline but caps each poll to `cap`.
 fn recv_deadline_cap(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, deadline: Instant, cap: Duration) -> Option<usize> {
     loop {
         let now = Instant::now();

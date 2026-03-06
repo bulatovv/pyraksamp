@@ -130,7 +130,6 @@ pub fn parse(data: &[u8], split_buf: &mut SplitBuffer) -> Option<ParseResult> {
 
     // Data packet(s): multiple may be coalesced in one datagram
     while bs.bits_remaining() >= 17 {
-        // Read msg_num + reliability
         let msg_num = match bs.read_uint16_le() {
             Ok(v) => v, Err(_) => break,
         };
@@ -176,7 +175,6 @@ pub fn parse(data: &[u8], split_buf: &mut SplitBuffer) -> Option<ParseResult> {
                 data: Vec::new(),
             });
 
-            // Buffer the fragment
             {
                 let frag = split_buf.pending.entry(split_id).or_insert_with(|| SplitFragment {
                     count: frag_count, reliability, ordering_channel, ordering_index,
