@@ -231,7 +231,7 @@ class TablistHeadersDialog:
         self._bot.send_dialog_response(self.dialog_id, button=0)
 
 
-AnyDialog = (
+type AnyDialog = (
     MsgboxDialog
     | InputDialog
     | PasswordDialog

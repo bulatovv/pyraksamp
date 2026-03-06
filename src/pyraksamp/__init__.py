@@ -13,8 +13,8 @@ Quick start::
         async def connected():
             print(f"Connected as player {bot.player_id}")
 
-        @bot.on_dialog
-        async def handle_dialog(dlg: pyraksamp.Dialog):
+        @bot.on_dialog()
+        async def handle_dialog(dlg: pyraksamp.AnyDialog):
             # Sequential: await anything while events still fire
             await bot.send_dialog_response(dlg.dialog_id, button=1)
 
@@ -31,7 +31,7 @@ import asyncio
 import random
 import struct
 from collections.abc import Callable
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pyraksamp._core import SAMPClient as _SAMPClient
 from pyraksamp import _core
@@ -923,29 +923,32 @@ class SAMPBot:
             return decorator(fn)
         return decorator
 
-    def on_dialog(
+    def on_dialog[D: (MsgboxDialog, InputDialog, PasswordDialog, ListDialog, TablistDialog, TablistHeadersDialog)](
         self,
-        fn: _F | None = None,
         *,
-        predicate: Callable[[AnyDialog], bool] | None = None,
-        style: int | None = None,
+        dialog_type: type[D] | None = None,
+        predicate: Callable[[D], bool] | None = None,
         dialog_id: int | None = None,
-    ) -> _F | Callable[[_F], _F]:
-        """Decorator: fn(event: AnyDialog) when a dialog is shown.
+    ) -> Callable[[Callable[[D], Any]], Callable[[D], Any]]:
+        """Decorator: fn(event) when a dialog is shown.
 
         Optional filters (all must match):
-            style=1              – INPUT dialogs only
-            dialog_id=32700      – specific dialog ID
+            dialog_type=InputDialog  – INPUT dialogs only
+            dialog_id=32700          – specific dialog ID
             predicate=lambda d: "register" in d.title
         """
 
-        def decorator(f):
-            filt = _make_obj_filter(predicate, {"style": style, "dialog_id": dialog_id})
+        def decorator(f: Callable[[D], Any]) -> Callable[[D], Any]:
+            type_pred = (lambda obj: isinstance(obj, dialog_type)) if dialog_type is not None else None
+            if type_pred is not None and predicate is not None:
+                _p = predicate
+                combined: Callable[[D], bool] | None = lambda obj: type_pred(obj) and _p(obj)
+            else:
+                combined = type_pred or predicate
+            filt = _make_obj_filter(combined, {"dialog_id": dialog_id})
             self._cb_dialog = _wrap_obj(f, filt) if filt else f
             return f
 
-        if fn is not None:
-            return decorator(fn)
         return decorator
 
     def on_game_text(
@@ -1313,24 +1316,30 @@ class SAMPBot:
             if predicate is None or predicate(rpc_id, data):
                 return data
 
-    async def wait_for_dialog(
+    async def wait_for_dialog[D: (MsgboxDialog, InputDialog, PasswordDialog, ListDialog, TablistDialog, TablistHeadersDialog)](
         self,
-        predicate: Callable[[AnyDialog], bool] | None = None,
+        predicate: Callable[[D], bool] | None = None,
         *,
-        style: int | None = None,
+        dialog_type: type[D] | None = None,
         dialog_id: int | None = None,
-    ) -> AnyDialog:
+    ) -> D:
         """Await the next dialog matching all given filters.
 
         Optional filters (all must match):
-            style=1              – INPUT dialogs only
-            dialog_id=32700      – specific dialog ID
+            dialog_type=InputDialog  – INPUT dialogs only
+            dialog_id=32700          – specific dialog ID
             predicate=lambda d: "register" in d.title
         """
-        filt = _make_obj_filter(predicate, {"style": style, "dialog_id": dialog_id})
+        type_pred = (lambda obj: isinstance(obj, dialog_type)) if dialog_type is not None else None
+        if type_pred is not None and predicate is not None:
+            _p = predicate
+            combined: Callable[[D], bool] | None = lambda obj: type_pred(obj) and _p(obj)
+        else:
+            combined = type_pred or predicate
+        filt = _make_obj_filter(combined, {"dialog_id": dialog_id})
         async for dlg in self.dialogs():
             if filt is None or filt(dlg):
-                return dlg
+                return dlg  # type: ignore[return-value]
 
     async def wait_for_chat(
         self,
