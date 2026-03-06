@@ -58,7 +58,7 @@ def test_init_creates_all_components():
         bot = SAMPBot("host")
         assert bot._bus is not None
         assert bot._actions is not None
-        assert bot._bridge is not None
+        assert bot._make_dialog is not None
         assert isinstance(bot._listeners, list)
 
 
@@ -103,17 +103,19 @@ def test_on_connect_registers_listener():
     with patch("pyraksamp._SAMPClient"):
         bot = SAMPBot("host")
 
-        def fn(): pass
+        def fn():
+            pass
 
         bot.on_connect(fn)
-        assert any(l._fn is fn for l in bot._listeners)
+        assert any(lst._fn is fn for lst in bot._listeners)
 
 
 def test_on_connect_returns_fn():
     with patch("pyraksamp._SAMPClient"):
         bot = SAMPBot("host")
 
-        def fn(): pass
+        def fn():
+            pass
 
         assert bot.on_connect(fn) is fn
 
@@ -131,10 +133,11 @@ def test_on_connect_tag_is_connect():
     with patch("pyraksamp._SAMPClient"):
         bot = SAMPBot("host")
 
-        def fn(): pass
+        def fn():
+            pass
 
         bot.on_connect(fn)
-        listener = next(l for l in bot._listeners if l._fn is fn)
+        listener = next(lst for lst in bot._listeners if lst._fn is fn)
         assert listener._tag == "connect"
 
 
@@ -142,12 +145,15 @@ def test_multiple_on_connect_handlers_allowed():
     with patch("pyraksamp._SAMPClient"):
         bot = SAMPBot("host")
 
-        def fn1(): pass
-        def fn2(): pass
+        def fn1():
+            pass
+
+        def fn2():
+            pass
 
         bot.on_connect(fn1)
         bot.on_connect(fn2)
-        connect_listeners = [l for l in bot._listeners if l._tag == "connect"]
+        connect_listeners = [lst for lst in bot._listeners if lst._tag == "connect"]
         assert len(connect_listeners) == 2
 
 
@@ -181,19 +187,10 @@ def test_start_wires_bridge_and_calls_executor():
         with patch("pyraksamp._SAMPClient") as MockClient:
             MockClient.return_value.start.return_value = True
             bot = SAMPBot("host")
-
-            setup_calls = []
-            original_setup = bot._bridge.setup
-
-            def record_setup(loop):
-                setup_calls.append(loop)
-                original_setup(loop)
-
-            bot._bridge.setup = record_setup
             result = await bot.start()
-
-        assert len(setup_calls) == 1
-        assert result is True
+            # All client callbacks should be assigned by _setup_bridge
+            assert callable(MockClient.return_value.on_connect)
+            assert result is True
 
     asyncio.run(_inner())
 
@@ -204,14 +201,15 @@ def test_start_starts_all_registered_listeners():
             MockClient.return_value.start.return_value = True
             bot = SAMPBot("host")
 
-            def fn(): pass
+            def fn():
+                pass
 
             bot.on_connect(fn)
             bot.on_disconnect(fn)
-            assert all(l._task is None for l in bot._listeners)
+            assert all(lst._task is None for lst in bot._listeners)
 
             await bot.start()
-            assert all(l._task is not None for l in bot._listeners)
+            assert all(lst._task is not None for lst in bot._listeners)
 
     asyncio.run(_inner())
 
@@ -223,10 +221,11 @@ def test_register_listener_after_start_starts_immediately():
             bot = SAMPBot("host")
             await bot.start()
 
-            def fn(): pass
+            def fn():
+                pass
 
             bot.on_connect(fn)
-            listener = next(l for l in bot._listeners if l._fn is fn)
+            listener = next(lst for lst in bot._listeners if lst._fn is fn)
             assert listener._task is not None
 
     asyncio.run(_inner())

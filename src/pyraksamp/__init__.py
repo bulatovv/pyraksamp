@@ -35,7 +35,7 @@ from typing import Any, overload
 from pyraksamp._core import SAMPClient as _SAMPClient
 from pyraksamp import _core
 from pyraksamp._bus import _EventBus
-from pyraksamp._bridge import _CallbackBridge
+from pyraksamp._bridge import _setup_bridge
 from pyraksamp._listener import _StreamListener, _CallbackListener
 from pyraksamp._actions import _Actions
 from pyraksamp._utils import _make_obj_filter
@@ -311,12 +311,8 @@ class SAMPBot:
         self._client = _SAMPClient(host, port, nickname, password, gpci)
         self._bus = _EventBus()
         self._actions = _Actions(self._client)
-        self._bridge = _CallbackBridge(
-            self._client,
-            self._bus,
-            lambda did, style, title, btn1, btn2, body: _make_dialog(
-                did, style, title, btn1, btn2, body, self._actions
-            ),
+        self._make_dialog = lambda did, style, title, btn1, btn2, body: _make_dialog(
+            did, style, title, btn1, btn2, body, self._actions
         )
         self._listeners: list[_CallbackListener] = []
         self._started: bool = False
@@ -341,7 +337,7 @@ class SAMPBot:
             ``True`` if connected, ``False`` on timeout or rejection.
         """
         loop = asyncio.get_running_loop()
-        self._bridge.setup(loop)
+        _setup_bridge(self._client, self._bus, self._make_dialog, loop)
         self._started = True
         for listener in self._listeners:
             listener.start()

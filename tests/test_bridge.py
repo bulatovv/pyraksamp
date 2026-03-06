@@ -1,16 +1,16 @@
-"""Isolated unit tests for _CallbackBridge."""
+"""Isolated unit tests for _setup_bridge."""
 
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from pyraksamp._bus import _EventBus
-from pyraksamp._bridge import _CallbackBridge
+from pyraksamp._bridge import _setup_bridge
 from pyraksamp.dialogs import _make_dialog, InputDialog
 from pyraksamp.events import PlayerJoin
 
 
-# All 37 callback attribute names that _CallbackBridge.setup() must assign.
+# All 37 callback attribute names that _setup_bridge must assign.
 _ALL_CALLBACK_ATTRS = [
     "on_connect",
     "on_disconnect",
@@ -52,7 +52,7 @@ _ALL_CALLBACK_ATTRS = [
 ]
 
 
-def make_bridge():
+def setup():
     """Return (client_ns, bus, mock_actions, loop_calls)."""
     client = SimpleNamespace()
     bus = _EventBus()
@@ -64,16 +64,15 @@ def make_bridge():
     loop_calls = []
     mock_loop = SimpleNamespace(call_soon_threadsafe=lambda fn: loop_calls.append(fn))
 
-    bridge = _CallbackBridge(client, bus, make_dialog)
-    bridge.setup(mock_loop)
+    _setup_bridge(client, bus, make_dialog, mock_loop)
     return client, bus, mock_actions, loop_calls
 
 
-# ── setup assigns all callbacks ───────────────────────────────────────────────
+# ── assigns all callbacks ─────────────────────────────────────────────────────
 
 
-def test_setup_assigns_all_callbacks():
-    client, bus, mock_actions, loop_calls = make_bridge()
+def test_assigns_all_callbacks():
+    client, bus, mock_actions, loop_calls = setup()
     for attr in _ALL_CALLBACK_ATTRS:
         assert callable(getattr(client, attr, None)), f"missing callback: {attr}"
 
@@ -82,14 +81,14 @@ def test_setup_assigns_all_callbacks():
 
 
 def test_on_connect_schedules_lambda():
-    client, bus, mock_actions, loop_calls = make_bridge()
+    client, bus, mock_actions, loop_calls = setup()
     client.on_connect()
     assert len(loop_calls) == 1
 
 
 def test_on_connect_lambda_broadcasts():
     async def _inner():
-        client, bus, mock_actions, loop_calls = make_bridge()
+        client, bus, mock_actions, loop_calls = setup()
         q = asyncio.Queue()
         bus.subscribe(q)
 
@@ -106,7 +105,7 @@ def test_on_connect_lambda_broadcasts():
 
 def test_on_player_join_constructs_event():
     async def _inner():
-        client, bus, mock_actions, loop_calls = make_bridge()
+        client, bus, mock_actions, loop_calls = setup()
         q = asyncio.Queue()
         bus.subscribe(q)
 
@@ -125,7 +124,7 @@ def test_on_player_join_constructs_event():
 
 def test_on_dialog_uses_make_dialog_factory():
     async def _inner():
-        client, bus, mock_actions, loop_calls = make_bridge()
+        client, bus, mock_actions, loop_calls = setup()
         q = asyncio.Queue()
         bus.subscribe(q)
 
@@ -145,15 +144,14 @@ def test_on_dialog_uses_make_dialog_factory():
 
 def test_on_rpc_broadcasts_correct_tuple():
     async def _inner():
-        client, bus, mock_actions, loop_calls = make_bridge()
+        client, bus, mock_actions, loop_calls = setup()
         q = asyncio.Queue()
         bus.subscribe(q)
 
         client.on_rpc(55, b"\x01")
         loop_calls[0]()
 
-        evt = q.get_nowait()
-        assert evt == ("rpc", 55, b"\x01")
+        assert q.get_nowait() == ("rpc", 55, b"\x01")
 
     asyncio.run(_inner())
 
@@ -163,7 +161,7 @@ def test_on_rpc_broadcasts_correct_tuple():
 
 def test_on_vehicle_streamed_in_siren_cast_to_bool():
     async def _inner():
-        client, bus, mock_actions, loop_calls = make_bridge()
+        client, bus, mock_actions, loop_calls = setup()
         q = asyncio.Queue()
         bus.subscribe(q)
 
@@ -185,7 +183,7 @@ def test_on_vehicle_streamed_in_siren_cast_to_bool():
 
 
 def test_no_sync_execution_before_lambda_called():
-    client, bus, mock_actions, loop_calls = make_bridge()
+    client, bus, mock_actions, loop_calls = setup()
     q = asyncio.Queue()
     bus.subscribe(q)
 
