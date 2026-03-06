@@ -31,7 +31,7 @@ import asyncio
 import random
 import struct
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, overload
 
 from pyraksamp._core import SAMPClient as _SAMPClient
 from pyraksamp import _core
@@ -923,13 +923,30 @@ class SAMPBot:
             return decorator(fn)
         return decorator
 
+    @overload
+    def on_dialog(
+        self,
+        fn: Callable[[AnyDialog], Any],
+    ) -> Callable[[AnyDialog], Any]: ...
+
+    @overload
     def on_dialog[D: (MsgboxDialog, InputDialog, PasswordDialog, ListDialog, TablistDialog, TablistHeadersDialog)](
         self,
+        fn: None = ...,
+        *,
+        dialog_type: type[D] | None = ...,
+        predicate: Callable[[D], bool] | None = ...,
+        dialog_id: int | None = ...,
+    ) -> Callable[[Callable[[D], Any]], Callable[[D], Any]]: ...
+
+    def on_dialog[D: (MsgboxDialog, InputDialog, PasswordDialog, ListDialog, TablistDialog, TablistHeadersDialog)](
+        self,
+        fn: Callable[[Any], Any] | None = None,
         *,
         dialog_type: type[D] | None = None,
         predicate: Callable[[D], bool] | None = None,
         dialog_id: int | None = None,
-    ) -> Callable[[Callable[[D], Any]], Callable[[D], Any]]:
+    ) -> Callable[[Any], Any]:
         """Decorator: fn(event) when a dialog is shown.
 
         Optional filters (all must match):
@@ -949,6 +966,8 @@ class SAMPBot:
             self._cb_dialog = _wrap_obj(f, filt) if filt else f
             return f
 
+        if fn is not None:
+            return decorator(fn)
         return decorator
 
     def on_game_text(
