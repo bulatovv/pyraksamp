@@ -42,7 +42,7 @@ class _EventStreams:
         wait_for_rpc : Await a single matching RPC.
         """
         q: asyncio.Queue = asyncio.Queue()
-        self._bus._subscribers.append(q)
+        self._bus.subscribe(q)
         try:
             while True:
                 event = await q.get()
@@ -53,7 +53,7 @@ class _EventStreams:
                     if rpc_id is None or rid == rpc_id:
                         yield rid, data
         finally:
-            self._bus._subscribers.remove(q)
+            self._bus.unsubscribe(q)
 
     async def events(self):
         """Async generator that yields every event as a tuple.
@@ -107,7 +107,7 @@ class _EventStreams:
         dialogs : Typed generator for dialogs.
         """
         q: asyncio.Queue = asyncio.Queue()
-        self._bus._subscribers.append(q)
+        self._bus.subscribe(q)
         try:
             while True:
                 event = await q.get()
@@ -115,13 +115,13 @@ class _EventStreams:
                 if event[0] == "disconnect":
                     return
         finally:
-            self._bus._subscribers.remove(q)
+            self._bus.unsubscribe(q)
 
     # ── Typed async generators ─────────────────────────────────────────────────
 
     async def _typed_gen(self, tag: str):
         q: asyncio.Queue = asyncio.Queue()
-        self._bus._subscribers.append(q)
+        self._bus.subscribe(q)
         try:
             while True:
                 event = await q.get()
@@ -130,7 +130,7 @@ class _EventStreams:
                 if event[0] == tag:
                     yield event[1]
         finally:
-            self._bus._subscribers.remove(q)
+            self._bus.unsubscribe(q)
 
     def chat(self):
         """Async generator yielding ChatMessage for each public chat message."""

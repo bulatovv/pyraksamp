@@ -3,6 +3,7 @@
 import asyncio
 
 from pyraksamp._bus import _EventBus
+from pyraksamp._actions import _Actions
 from pyraksamp.dialogs import _make_dialog
 from pyraksamp.events import (
     ChatMessage,
@@ -47,9 +48,10 @@ class _CallbackBridge:
     that both the broadcast and user callback execute in the event loop thread.
     """
 
-    def __init__(self, client, bus: _EventBus) -> None:
+    def __init__(self, client, bus: _EventBus, actions: _Actions) -> None:
         self._client = client
         self._bus = bus
+        self._actions = actions
 
     def setup(self, loop: asyncio.AbstractEventLoop) -> None:
         """Wire all Rust callbacks to the asyncio event loop."""
@@ -118,7 +120,7 @@ class _CallbackBridge:
         def on_dialog(
             did: int, style: int, title: str, btn1: str, btn2: str, body: str
         ):
-            evt = _make_dialog(did, style, title, btn1, btn2, body, self._client)
+            evt = _make_dialog(did, style, title, btn1, btn2, body, self._actions)
             loop.call_soon_threadsafe(
                 lambda: (
                     bus.broadcast(("dialog", evt)),

@@ -32,9 +32,8 @@ class _Actions:
 
     def send_chat(self, message: str) -> None:
         """Send a public chat message (RPC 101)."""
-        from pyraksamp._core import RPC_CHAT
         msg = message.encode("ascii", errors="replace")[:144]
-        self.send_rpc(RPC_CHAT, struct.pack("B", len(msg)) + msg)
+        self.send_rpc(_core.RPC_CHAT, struct.pack("B", len(msg)) + msg)
 
     def send_dialog_response(
         self, dialog_id: int, button: int, list_item: int = 0, text: str = ""

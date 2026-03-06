@@ -85,6 +85,14 @@ class _EventBus:
 
     # ── Internal dispatch ──────────────────────────────────────────────────────
 
+    def subscribe(self, q: asyncio.Queue) -> None:
+        """Register a queue to receive all broadcast events."""
+        self._subscribers.append(q)
+
+    def unsubscribe(self, q: asyncio.Queue) -> None:
+        """Deregister a previously subscribed queue."""
+        self._subscribers.remove(q)
+
     def broadcast(self, event: tuple) -> None:
         """Fan an event out to every active subscriber queue."""
         for q in self._subscribers:

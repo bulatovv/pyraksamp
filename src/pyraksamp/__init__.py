@@ -305,9 +305,9 @@ class SAMPBot:
             gpci = gen_gpci()
         self._client = _SAMPClient(host, port, nickname, password, gpci)
         self._bus = _EventBus()
-        self._bridge = _CallbackBridge(self._client, self._bus)
-        self._streams = _EventStreams(self._bus)
         self._actions = _Actions(self._client)
+        self._bridge = _CallbackBridge(self._client, self._bus, self._actions)
+        self._streams = _EventStreams(self._bus)
 
     # ── Connection lifecycle ───────────────────────────────────────────────────
 
