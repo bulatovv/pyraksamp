@@ -10,3 +10,4 @@ wheels/
 .venv
 
 reference
+src/pyraksamp_core/target/
