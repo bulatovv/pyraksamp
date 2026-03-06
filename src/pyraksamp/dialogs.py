@@ -4,12 +4,22 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar, Generic, Literal, TypeVar
-
-if TYPE_CHECKING:
-    from pyraksamp import SAMPBot
+from typing import ClassVar, Generic, Literal, Protocol, TypeVar
 
 _R = TypeVar("_R")
+
+
+class _Responder(Protocol):
+    """Structural interface for objects that can respond to SA:MP dialogs."""
+
+    def send_dialog_response(
+        self,
+        dialog_id: int,
+        button: int,
+        list_item: int = 0,
+        text: str = "",
+    ) -> None: ...
+
 
 __all__ = [
     "AnyDialog",
@@ -37,7 +47,7 @@ class Button:
     label: str
     id: int
     _dialog_id: int = field(repr=False, compare=False)
-    _bot: SAMPBot = field(repr=False, compare=False)
+    _bot: _Responder = field(repr=False, compare=False)
 
     def click(self) -> None:
         """Send this button's response to the server."""
@@ -76,7 +86,7 @@ class ButtonSelector:
 
 
 def _make_buttons(
-    dialog_id: int, button1: str, button2: str, bot: SAMPBot
+    dialog_id: int, button1: str, button2: str, bot: _Responder
 ) -> ButtonSelector:
     # [0]=left/OK (wire id=1), [1]=right/Cancel (wire id=0)
     left = Button(label=button1, id=1, _dialog_id=dialog_id, _bot=bot)
@@ -96,7 +106,7 @@ class ListRow:
     text: str
     index: int
     _dialog_id: int = field(repr=False, compare=False)
-    _bot: SAMPBot = field(repr=False, compare=False)
+    _bot: _Responder = field(repr=False, compare=False)
 
     def select(self) -> None:
         """Send a selection response for this row."""
@@ -109,7 +119,7 @@ class TablistRow:
     columns: tuple[str, ...]
     index: int
     _dialog_id: int = field(repr=False, compare=False)
-    _bot: SAMPBot = field(repr=False, compare=False)
+    _bot: _Responder = field(repr=False, compare=False)
 
     def select(self) -> None:
         """Send a selection response for this row."""
@@ -167,7 +177,7 @@ class MsgboxDialog:
     button1: str
     button2: str
     buttons: ButtonSelector
-    _bot: SAMPBot = field(repr=False, compare=False)
+    _bot: _Responder = field(repr=False, compare=False)
 
     def ok(self) -> None:
         """Send the OK (first button) response."""
@@ -189,7 +199,7 @@ class InputDialog:
     button1: str
     button2: str
     buttons: ButtonSelector
-    _bot: SAMPBot = field(repr=False, compare=False)
+    _bot: _Responder = field(repr=False, compare=False)
 
     def submit(self, text: str = "") -> None:
         """Send the OK response with the given text input."""
@@ -211,7 +221,7 @@ class PasswordDialog:
     button1: str
     button2: str
     buttons: ButtonSelector
-    _bot: SAMPBot = field(repr=False, compare=False)
+    _bot: _Responder = field(repr=False, compare=False)
 
     def submit(self, text: str = "") -> None:
         """Send the OK response with the given password."""
@@ -232,7 +242,7 @@ class ListDialog:
     button1: str
     button2: str
     rows: RowSelector[ListRow]
-    _bot: SAMPBot = field(repr=False, compare=False)
+    _bot: _Responder = field(repr=False, compare=False)
 
     def cancel(self) -> None:
         """Send the Cancel response."""
@@ -249,7 +259,7 @@ class TablistDialog:
     button1: str
     button2: str
     rows: RowSelector[TablistRow]
-    _bot: SAMPBot = field(repr=False, compare=False)
+    _bot: _Responder = field(repr=False, compare=False)
 
     def cancel(self) -> None:
         """Send the Cancel response."""
@@ -267,7 +277,7 @@ class TablistHeadersDialog:
     button2: str
     headers: tuple[str, ...]
     rows: RowSelector[TablistRow]
-    _bot: SAMPBot = field(repr=False, compare=False)
+    _bot: _Responder = field(repr=False, compare=False)
 
     def cancel(self) -> None:
         """Send the Cancel response."""
@@ -288,7 +298,7 @@ type AnyDialog = (
 
 
 def _make_dialog(
-    did: int, style: int, title: str, btn1: str, btn2: str, body: str, bot: SAMPBot
+    did: int, style: int, title: str, btn1: str, btn2: str, body: str, bot: _Responder
 ) -> AnyDialog:
     buttons = _make_buttons(did, btn1, btn2, bot)
 
