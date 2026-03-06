@@ -25,3 +25,8 @@ cache-keys = [
     { file = "src/pyraksamp_core/Cargo.toml" },
     { file = "src/pyraksamp_core/samp_core/Cargo.toml" },
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
