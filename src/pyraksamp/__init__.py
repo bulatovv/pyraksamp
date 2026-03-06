@@ -327,7 +327,7 @@ class SAMPBot:
         self._bridge.setup(loop)
         return await loop.run_in_executor(None, lambda: self._client.start(timeout))
 
-    async def disconnect(self) -> None:
+    def disconnect(self) -> None:
         """Send disconnect notification and stop the receive loop."""
         self._client.disconnect()
 
