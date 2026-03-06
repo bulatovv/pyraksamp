@@ -35,11 +35,12 @@ class Button:
     """A dialog button. SA:MP IDs: 1 = first/OK, 0 = second/Cancel."""
 
     label: str
-    id: int  # SA:MP button ID: 1=first, 0=second
+    id: int
     _dialog_id: int = field(repr=False, compare=False)
     _bot: SAMPBot = field(repr=False, compare=False)
 
     def click(self) -> None:
+        """Send this button's response to the server."""
         self._bot.send_dialog_response(self._dialog_id, button=self.id)
 
 
@@ -55,6 +56,13 @@ class ButtonSelector:
         return self._buttons[idx]
 
     def __call__(self, pred: Callable[[Button], bool]) -> Button:
+        """Return the first button matching ``pred``.
+
+        Raises
+        ------
+        ValueError
+            If no button matches.
+        """
         for b in self._buttons:
             if pred(b):
                 return b
@@ -83,23 +91,28 @@ def _make_buttons(
 
 @dataclass(slots=True, frozen=True)
 class ListRow:
+    """A single row in a list dialog."""
+
     text: str
     index: int
     _dialog_id: int = field(repr=False, compare=False)
     _bot: SAMPBot = field(repr=False, compare=False)
 
     def select(self) -> None:
+        """Send a selection response for this row."""
         self._bot.send_dialog_response(self._dialog_id, button=1, list_item=self.index)
 
 
 @dataclass(slots=True, frozen=True)
 class TablistRow:
+    """A single row in a tablist dialog, with tab-separated column values."""
     columns: tuple[str, ...]
     index: int
     _dialog_id: int = field(repr=False, compare=False)
     _bot: SAMPBot = field(repr=False, compare=False)
 
     def select(self) -> None:
+        """Send a selection response for this row."""
         self._bot.send_dialog_response(self._dialog_id, button=1, list_item=self.index)
 
     def __getitem__(self, col: int) -> str:
@@ -110,6 +123,8 @@ class TablistRow:
 
 
 class RowSelector(Generic[_R]):
+    """Indexed and predicate-searchable collection of dialog rows."""
+
     __slots__ = ("_rows",)
 
     def __init__(self, rows: list[_R]) -> None:
@@ -119,6 +134,13 @@ class RowSelector(Generic[_R]):
         return self._rows[idx]
 
     def __call__(self, pred: Callable[[_R], bool]) -> _R:
+        """Return the first row matching ``pred``.
+
+        Raises
+        ------
+        ValueError
+            If no row matches.
+        """
         for r in self._rows:
             if pred(r):
                 return r
@@ -136,6 +158,8 @@ class RowSelector(Generic[_R]):
 
 @dataclass(slots=True, frozen=True)
 class MsgboxDialog:
+    """A message box dialog with OK/Cancel buttons (style 0)."""
+
     style: ClassVar[Literal[0]] = 0
     dialog_id: int
     title: str
@@ -146,14 +170,18 @@ class MsgboxDialog:
     _bot: SAMPBot = field(repr=False, compare=False)
 
     def ok(self) -> None:
+        """Send the OK (first button) response."""
         self._bot.send_dialog_response(self.dialog_id, button=1)
 
     def cancel(self) -> None:
+        """Send the Cancel (second button) response."""
         self._bot.send_dialog_response(self.dialog_id, button=0)
 
 
 @dataclass(slots=True, frozen=True)
 class InputDialog:
+    """A text input dialog (style 1)."""
+
     style: ClassVar[Literal[1]] = 1
     dialog_id: int
     title: str
@@ -164,14 +192,18 @@ class InputDialog:
     _bot: SAMPBot = field(repr=False, compare=False)
 
     def submit(self, text: str = "") -> None:
+        """Send the OK response with the given text input."""
         self._bot.send_dialog_response(self.dialog_id, button=1, text=text)
 
     def cancel(self) -> None:
+        """Send the Cancel response."""
         self._bot.send_dialog_response(self.dialog_id, button=0)
 
 
 @dataclass(slots=True, frozen=True)
 class PasswordDialog:
+    """A masked-input (password) dialog (style 3)."""
+
     style: ClassVar[Literal[3]] = 3
     dialog_id: int
     title: str
@@ -182,14 +214,18 @@ class PasswordDialog:
     _bot: SAMPBot = field(repr=False, compare=False)
 
     def submit(self, text: str = "") -> None:
+        """Send the OK response with the given password."""
         self._bot.send_dialog_response(self.dialog_id, button=1, text=text)
 
     def cancel(self) -> None:
+        """Send the Cancel response."""
         self._bot.send_dialog_response(self.dialog_id, button=0)
 
 
 @dataclass(slots=True, frozen=True)
 class ListDialog:
+    """A scrollable list dialog (style 2)."""
+
     style: ClassVar[Literal[2]] = 2
     dialog_id: int
     title: str
@@ -199,11 +235,14 @@ class ListDialog:
     _bot: SAMPBot = field(repr=False, compare=False)
 
     def cancel(self) -> None:
+        """Send the Cancel response."""
         self._bot.send_dialog_response(self.dialog_id, button=0)
 
 
 @dataclass(slots=True, frozen=True)
 class TablistDialog:
+    """A tabular list dialog without column headers (style 4)."""
+
     style: ClassVar[Literal[4]] = 4
     dialog_id: int
     title: str
@@ -213,11 +252,14 @@ class TablistDialog:
     _bot: SAMPBot = field(repr=False, compare=False)
 
     def cancel(self) -> None:
+        """Send the Cancel response."""
         self._bot.send_dialog_response(self.dialog_id, button=0)
 
 
 @dataclass(slots=True, frozen=True)
 class TablistHeadersDialog:
+    """A tabular list dialog with column headers (style 5)."""
+
     style: ClassVar[Literal[5]] = 5
     dialog_id: int
     title: str
@@ -228,6 +270,7 @@ class TablistHeadersDialog:
     _bot: SAMPBot = field(repr=False, compare=False)
 
     def cancel(self) -> None:
+        """Send the Cancel response."""
         self._bot.send_dialog_response(self.dialog_id, button=0)
 
 

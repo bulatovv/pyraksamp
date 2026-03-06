@@ -192,8 +192,8 @@ RPC_DEATH_BROADCAST = _core.RPC_DEATH_BROADCAST
 
 
 
+# Return a filter callable(obj)->bool, or None if no filtering is requested.
 def _make_obj_filter(predicate, kwargs):
-    """Return a filter callable(obj)->bool, or None if no filtering requested."""
     kw = {k: v for k, v in kwargs.items() if v is not None}
     if predicate is None and not kw:
         return None
@@ -206,9 +206,8 @@ def _make_obj_filter(predicate, kwargs):
     return filt
 
 
+# Wrap a single-arg event callback with a predicate guard.
 def _wrap_obj(fn, filt):
-    """Wrap a single-arg event callback with a predicate guard."""
-
     async def wrapper(obj):
         if filt(obj):
             if asyncio.iscoroutinefunction(fn):
@@ -241,6 +240,24 @@ class SAMPBot:
 
     Sending (send_rpc, send_chat, send_dialog_response, …) is synchronous and
     safe to call from async code — no await needed, no executor overhead.
+
+    Parameters
+    ----------
+    host
+        Server hostname or IP address.
+    port
+        UDP port the server listens on.
+    nickname
+        In-game name shown to other players (max 20 characters).
+    password
+        Server password; leave empty for password-free servers.
+    gpci
+        Hardware key string (GTA serial). A valid random key is generated if
+        omitted; supply a fixed value to maintain a persistent identity.
+
+    See Also
+    --------
+    gen_gpci : Generate a random valid GPCI string.
     """
 
     def __init__(
@@ -314,15 +331,14 @@ class SAMPBot:
 
     # ── Internal: async bridge ─────────────────────────────────────────────────
 
+    # Fan an event out to every active subscriber queue.
+    # Always called from inside the event loop (via call_soon_threadsafe).
     def _broadcast(self, event: tuple) -> None:
-        """Fan an event out to every active subscriber queue.
-        Always called inside the event loop (via call_soon_threadsafe).
-        """
         for q in self._subscribers:
             q.put_nowait(event)
 
+    # Call a user callback (sync or async def) from the event loop thread.
     def _fire(self, cb, *args) -> None:
-        """Call a user callback (sync or async def) from the event loop thread."""
         if cb is None:
             return
         if asyncio.iscoroutinefunction(cb):
@@ -330,14 +346,11 @@ class SAMPBot:
         else:
             cb(*args)
 
+    # Wire Rust callbacks → asyncio event loop.
+    # The Rust run() thread invokes these with the GIL held; we must not block.
+    # All work is scheduled onto the loop via call_soon_threadsafe so that both
+    # the broadcast and user callback execute in the event loop thread.
     def _setup_callbacks(self, loop: asyncio.AbstractEventLoop) -> None:
-        """Wire C++ callbacks → asyncio event loop.
-
-        The C++ run() thread invokes these functions with the GIL held (pybind11
-        acquires it before each callback).  We must not block here; instead we
-        schedule all work onto the event loop with call_soon_threadsafe so that
-        both the broadcast and user callback always execute in the loop thread.
-        """
 
         def on_connect():
             loop.call_soon_threadsafe(
@@ -792,12 +805,12 @@ class SAMPBot:
     # Typed callbacks receive the corresponding dataclass instance as first arg.
 
     def on_connect[F: Callable](self, fn: F) -> F:
-        """Decorator: called (no args) when fully connected."""
+        """Register a callback invoked when the client connects."""
         self._cb_connect = fn
         return fn
 
     def on_disconnect[F: Callable](self, fn: F) -> F:
-        """Decorator: called (no args) on disconnection."""
+        """Register a callback invoked when the client disconnects."""
         self._cb_disconnect = fn
         return fn
 
@@ -808,11 +821,14 @@ class SAMPBot:
         rpc_id: int | None = None,
         predicate: Callable[[int, bytes], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        """Decorator: fn(rpc_id: int, data: bytes) for every incoming RPC (raw).
+        """Register a callback invoked for every incoming RPC.
 
-        Optional filters:
-            rpc_id=61            – specific RPC only
-            predicate=lambda rid, data: ...
+        Parameters
+        ----------
+        rpc_id
+            If given, only invoke the callback for RPCs with this ID.
+        predicate
+            Additional filter; called with ``(rpc_id, data)``.
         """
 
         def decorator(f):
@@ -845,9 +861,16 @@ class SAMPBot:
         name: str | None = None,
         predicate: Callable[[PlayerJoin], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        """Decorator: fn(event: PlayerJoin) when a player connects.
+        """Register a callback invoked when a player joins.
 
-        Optional filters: player_id=, name=, predicate=lambda e: ...
+        Parameters
+        ----------
+        player_id
+            Only invoke when this player's ID matches.
+        name
+            Only invoke when the player's name matches.
+        predicate
+            Additional filter; called with the event.
         """
 
         def decorator(f):
@@ -866,9 +889,14 @@ class SAMPBot:
         player_id: int | None = None,
         predicate: Callable[[PlayerQuit], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        """Decorator: fn(event: PlayerQuit) when a player disconnects.
+        """Register a callback invoked when a player disconnects.
 
-        Optional filters: player_id=, predicate=lambda e: ...
+        Parameters
+        ----------
+        player_id
+            Only invoke when this player's ID matches.
+        predicate
+            Additional filter; called with the event.
         """
 
         def decorator(f):
@@ -887,9 +915,14 @@ class SAMPBot:
         player_id: int | None = None,
         predicate: Callable[[ChatMessage], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        """Decorator: fn(event: ChatMessage) for public chat.
+        """Register a callback invoked for public chat messages.
 
-        Optional filters: player_id=, predicate=lambda e: e.text.startswith("!")
+        Parameters
+        ----------
+        player_id
+            Only invoke when the sender's player ID matches.
+        predicate
+            Additional filter; e.g. ``lambda e: e.text.startswith("!")``.
         """
 
         def decorator(f):
@@ -908,9 +941,14 @@ class SAMPBot:
         color: int | None = None,
         predicate: Callable[[ServerMessage], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        """Decorator: fn(event: ServerMessage) for server messages.
+        """Register a callback invoked for server messages (SendClientMessage).
 
-        Optional filters: color=0xFF0000FF, predicate=lambda e: ...
+        Parameters
+        ----------
+        color
+            Only invoke when the message color matches (e.g. ``0xFF0000FF``).
+        predicate
+            Additional filter; called with the event.
         """
 
         def decorator(f):
@@ -946,12 +984,16 @@ class SAMPBot:
         predicate: Callable[[D], bool] | None = None,
         dialog_id: int | None = None,
     ) -> Callable[[Any], Any]:
-        """Decorator: fn(event) when a dialog is shown.
+        """Register a callback invoked when a dialog is shown.
 
-        Optional filters (all must match):
-            dialog_type=InputDialog  – INPUT dialogs only
-            dialog_id=32700          – specific dialog ID
-            predicate=lambda d: "register" in d.title
+        Parameters
+        ----------
+        dialog_type
+            Only invoke for dialogs of this type (e.g. ``InputDialog``).
+        dialog_id
+            Only invoke for dialogs with this ID.
+        predicate
+            Additional filter; called with the dialog object.
         """
 
         def decorator(f: Callable[[D], Any]) -> Callable[[D], Any]:
@@ -976,9 +1018,14 @@ class SAMPBot:
         style: int | None = None,
         predicate: Callable[[GameText], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        """Decorator: fn(event: GameText) for ShowGameText.
+        """Register a callback invoked for ShowGameText.
 
-        Optional filters: style=, predicate=lambda e: ...
+        Parameters
+        ----------
+        style
+            Only invoke when the text style matches.
+        predicate
+            Additional filter; called with the event.
         """
 
         def decorator(f):
@@ -991,150 +1038,158 @@ class SAMPBot:
         return decorator
 
     def on_set_health[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: SetHealth)."""
+        """Register a callback invoked when the server sets our health."""
         self._cb_set_health = fn
         return fn
 
     def on_set_armour[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: SetArmour)."""
+        """Register a callback invoked when the server sets our armour."""
         self._cb_set_armour = fn
         return fn
 
     def on_set_position[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: SetPosition)."""
+        """Register a callback invoked when the server teleports us."""
         self._cb_set_position = fn
         return fn
 
     def on_checkpoint[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: Checkpoint)."""
+        """Register a callback invoked when the server sets a checkpoint."""
         self._cb_checkpoint = fn
         return fn
 
     def on_checkpoint_disabled[F: Callable](self, fn: F) -> F:
-        """Decorator: fn() when the checkpoint is disabled."""
+        """Register a callback invoked when the checkpoint is disabled."""
         self._cb_checkpoint_disabled = fn
         return fn
 
     def on_player_streamed_in[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: PlayerStreamIn)."""
+        """Register a callback invoked when a player streams into proximity."""
         self._cb_player_streamed_in = fn
         return fn
 
     def on_player_streamed_out[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: PlayerStreamOut)."""
+        """Register a callback invoked when a player streams out of proximity."""
         self._cb_player_streamed_out = fn
         return fn
 
     def on_player_name[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: PlayerNameChange)."""
+        """Register a callback invoked when a player's name changes."""
         self._cb_player_name = fn
         return fn
 
     def on_toggle_controllable[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: ToggleControllable)."""
+        """Register a callback invoked when the server toggles our controllable state."""
         self._cb_toggle_controllable = fn
         return fn
 
     def on_player_time[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: PlayerTime)."""
+        """Register a callback invoked when the server sets the player time."""
         self._cb_player_time = fn
         return fn
 
     def on_death_message[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: DeathMessage)."""
+        """Register a callback invoked when a death message is broadcast."""
         self._cb_death_message = fn
         return fn
 
     def on_set_armed_weapon[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: SetArmedWeapon)."""
+        """Register a callback invoked when the server sets our armed weapon."""
         self._cb_set_armed_weapon = fn
         return fn
 
     def on_spawn_info[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: SpawnInfo)."""
+        """Register a callback invoked when the server sends spawn info."""
         self._cb_spawn_info = fn
         return fn
 
     def on_player_team[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: PlayerTeam)."""
+        """Register a callback invoked when a player's team is set."""
         self._cb_player_team = fn
         return fn
 
     def on_put_in_vehicle[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: PutInVehicle)."""
+        """Register a callback invoked when we are put in a vehicle."""
         self._cb_put_in_vehicle = fn
         return fn
 
     def on_remove_from_vehicle[F: Callable](self, fn: F) -> F:
-        """Decorator: fn() when removed from vehicle."""
+        """Register a callback invoked when we are removed from a vehicle."""
         self._cb_remove_from_vehicle = fn
         return fn
 
     def on_player_color[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: PlayerColor)."""
+        """Register a callback invoked when a player's color is set."""
         self._cb_player_color = fn
         return fn
 
     def on_world_time[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: WorldTime)."""
+        """Register a callback invoked when the server sets the world time."""
         self._cb_world_time = fn
         return fn
 
     def on_toggle_spectating[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: ToggleSpectating)."""
+        """Register a callback invoked when the server toggles spectating mode."""
         self._cb_toggle_spectating = fn
         return fn
 
     def on_wanted_level[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: WantedLevel)."""
+        """Register a callback invoked when the server sets our wanted level."""
         self._cb_wanted_level = fn
         return fn
 
     def on_weapon_ammo[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: WeaponAmmo)."""
+        """Register a callback invoked when the server sets weapon ammo."""
         self._cb_weapon_ammo = fn
         return fn
 
     def on_gravity[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: Gravity)."""
+        """Register a callback invoked when the server sets world gravity."""
         self._cb_gravity = fn
         return fn
 
     def on_weather[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: Weather)."""
+        """Register a callback invoked when the server sets the weather."""
         self._cb_weather = fn
         return fn
 
     def on_player_skin[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: PlayerSkin)."""
+        """Register a callback invoked when a player's skin is set."""
         self._cb_player_skin = fn
         return fn
 
     def on_set_interior[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: SetInterior)."""
+        """Register a callback invoked when the server sets our interior."""
         self._cb_set_interior = fn
         return fn
 
     def on_vehicle_streamed_in[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: VehicleStreamIn)."""
+        """Register a callback invoked when a vehicle streams into proximity."""
         self._cb_vehicle_streamed_in = fn
         return fn
 
     def on_vehicle_streamed_out[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: VehicleStreamOut)."""
+        """Register a callback invoked when a vehicle streams out of proximity."""
         self._cb_vehicle_streamed_out = fn
         return fn
 
     def on_player_death[F: Callable](self, fn: F) -> F:
-        """Decorator: fn(event: PlayerDeath)."""
+        """Register a callback invoked when a player death is broadcast."""
         self._cb_player_death = fn
         return fn
 
     # ── Connection lifecycle ───────────────────────────────────────────────────
 
     async def start(self, timeout: float = 15.0) -> bool:
-        """Connect and spawn the background receive/keepalive thread.
-        Returns True on success.  After this returns, events begin flowing.
+        """Connect and start the background receive/keepalive thread.
+
+        Parameters
+        ----------
+        timeout
+            Maximum seconds to wait for the connection to be accepted.
+
+        Returns
+        -------
+            ``True`` if connected, ``False`` on timeout or rejection.
         """
         loop = asyncio.get_running_loop()
         self._loop = loop
@@ -1152,13 +1207,20 @@ class SAMPBot:
     # ── Generic event streams ──────────────────────────────────────────────────
 
     async def rpcs(self, rpc_id: int | None = None):
-        """Async generator yielding (rpc_id, data: bytes) for raw RPCs.
+        """Async generator yielding ``(rpc_id, data)`` for raw RPCs.
 
-        Each call creates an independent subscriber — multiple concurrent
-        consumers each see every event independently (fan-out, no stealing).
+        Each call creates an independent subscriber; concurrent consumers all
+        receive every event (fan-out, no stealing).
 
-        Args:
-            rpc_id: If given, yield only RPCs matching this ID.
+        Parameters
+        ----------
+        rpc_id
+            If given, yield only RPCs matching this ID.
+
+        See Also
+        --------
+        events : Low-level generator that yields all event tuples.
+        wait_for_rpc : Await a single matching RPC.
         """
         q: asyncio.Queue = asyncio.Queue()
         self._subscribers.append(q)
@@ -1218,6 +1280,12 @@ class SAMPBot:
         - ``('player_death', PlayerDeath)``
 
         Stops after yielding ``('disconnect',)``.
+
+        See Also
+        --------
+        rpcs : Specialized generator for raw RPCs.
+        chat : Typed generator for chat messages.
+        dialogs : Typed generator for dialogs.
         """
         q: asyncio.Queue = asyncio.Queue()
         self._subscribers.append(q)
@@ -1232,8 +1300,8 @@ class SAMPBot:
 
     # ── Typed async generators ─────────────────────────────────────────────────
 
+    # Yield the payload object for events matching `tag`.
     async def _typed_gen(self, tag: str):
-        """Yield the payload object for events matching *tag*."""
         q: asyncio.Queue = asyncio.Queue()
         self._subscribers.append(q)
         try:
@@ -1329,7 +1397,19 @@ class SAMPBot:
     async def wait_for_rpc(
         self, rpc_id: int, *, predicate: Callable[[int, bytes], bool] | None = None
     ) -> bytes:
-        """Await the next RPC with the given ID and return its payload bytes."""
+        """Await the next RPC with the given ID.
+
+        Parameters
+        ----------
+        rpc_id
+            The RPC ID to wait for.
+        predicate
+            Optional additional filter; called with ``(rpc_id, data)``.
+
+        Returns
+        -------
+            Raw payload bytes of the matching RPC.
+        """
         async for _, data in self.rpcs(rpc_id=rpc_id):
             if predicate is None or predicate(rpc_id, data):
                 return data
@@ -1343,10 +1423,18 @@ class SAMPBot:
     ) -> D:
         """Await the next dialog matching all given filters.
 
-        Optional filters (all must match):
-            dialog_type=InputDialog  – INPUT dialogs only
-            dialog_id=32700          – specific dialog ID
-            predicate=lambda d: "register" in d.title
+        Parameters
+        ----------
+        predicate
+            Optional filter; called with the dialog object.
+        dialog_type
+            Only match dialogs of this type (e.g. ``InputDialog``).
+        dialog_id
+            Only match dialogs with this ID.
+
+        Returns
+        -------
+            The matched dialog.
         """
         type_pred = (lambda obj: isinstance(obj, dialog_type)) if dialog_type is not None else None
         if type_pred is not None and predicate is not None:
@@ -1365,7 +1453,19 @@ class SAMPBot:
         *,
         player_id: int | None = None,
     ) -> ChatMessage:
-        """Await the next public chat message matching all given filters."""
+        """Await the next public chat message matching all given filters.
+
+        Parameters
+        ----------
+        predicate
+            Optional filter; called with the message.
+        player_id
+            Only match messages from this player.
+
+        Returns
+        -------
+            The matched chat message.
+        """
         filt = _make_obj_filter(predicate, {"player_id": player_id})
         async for msg in self.chat():
             if filt is None or filt(msg):
@@ -1377,7 +1477,19 @@ class SAMPBot:
         *,
         color: int | None = None,
     ) -> ServerMessage:
-        """Await the next server message matching all given filters."""
+        """Await the next server message matching all given filters.
+
+        Parameters
+        ----------
+        predicate
+            Optional filter; called with the message.
+        color
+            Only match messages with this color value.
+
+        Returns
+        -------
+            The matched server message.
+        """
         filt = _make_obj_filter(predicate, {"color": color})
         async for msg in self.server_messages():
             if filt is None or filt(msg):
@@ -1390,7 +1502,21 @@ class SAMPBot:
         player_id: int | None = None,
         name: str | None = None,
     ) -> PlayerJoin:
-        """Await the next player join matching all given filters."""
+        """Await the next player join matching all given filters.
+
+        Parameters
+        ----------
+        predicate
+            Optional filter; called with the event.
+        player_id
+            Only match this player's ID.
+        name
+            Only match this player's name.
+
+        Returns
+        -------
+            The matched player join event.
+        """
         filt = _make_obj_filter(predicate, {"player_id": player_id, "name": name})
         async for evt in self.player_joins():
             if filt is None or filt(evt):
@@ -1402,6 +1528,17 @@ class SAMPBot:
     def send_rpc(
         self, rpc_id: int, data: bytes = b"", reliability: int = RELIABLE
     ) -> bool:
+        """Send a raw RPC packet to the server.
+
+        Parameters
+        ----------
+        rpc_id
+            SA:MP RPC ID.
+        data
+            Raw payload bytes.
+        reliability
+            One of the module-level ``RELIABLE*`` / ``UNRELIABLE*`` constants.
+        """
         return self._client.send_rpc(rpc_id, data, reliability)
 
     def send_chat(self, message: str) -> None:
@@ -1435,10 +1572,12 @@ class SAMPBot:
 
     @property
     def is_connected(self) -> bool:
+        """True if the client is currently connected to the server."""
         return self._client.is_connected
 
     @property
     def player_id(self) -> int:
+        """The bot's player ID assigned by the server, or -1 before the connection is accepted."""
         return self._client.player_id
 
 
