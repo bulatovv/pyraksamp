@@ -1,6 +1,7 @@
 """_EventBus — owns callback slots, subscriber queues, and on_* decorators."""
 
 import asyncio
+import inspect
 from collections.abc import Callable
 from typing import Any, overload
 
@@ -102,7 +103,7 @@ class _EventBus:
         """Call a user callback (sync or async def) from the event loop thread."""
         if cb is None:
             return
-        if asyncio.iscoroutinefunction(cb):
+        if inspect.iscoroutinefunction(cb):
             asyncio.create_task(cb(*args))
         else:
             cb(*args)
@@ -144,7 +145,7 @@ class _EventBus:
                         return
                     if predicate is not None and not predicate(rid, data):
                         return
-                    if asyncio.iscoroutinefunction(f):
+                    if inspect.iscoroutinefunction(f):
                         await f(rid, data)
                     else:
                         f(rid, data)

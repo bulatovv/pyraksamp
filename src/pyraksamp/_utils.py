@@ -1,6 +1,6 @@
 """Internal filter helpers shared by _bus and _streams."""
 
-import asyncio
+import inspect
 from collections.abc import Callable
 
 
@@ -22,7 +22,7 @@ def _make_obj_filter(predicate, kwargs):
 def _wrap_obj(fn, filt):
     async def wrapper(obj):
         if filt(obj):
-            if asyncio.iscoroutinefunction(fn):
+            if inspect.iscoroutinefunction(fn):
                 await fn(obj)
             else:
                 fn(obj)
