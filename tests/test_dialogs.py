@@ -217,14 +217,19 @@ def test_unknown_style_fallback():
 
 
 def _mock_self():
-    """Minimal stand-in for SAMPBot — needs _bus with _cb_dialog."""
+    """Minimal stand-in for SAMPBot — compatible with _CallbackListener."""
     bot = SimpleNamespace()
     bot._bus = _EventBus()
+    bot._listeners = []
+    bot._started = False
+
+    def _register_listener(listener):
+        bot._listeners.append(listener)
+        if bot._started:
+            listener.start()
+
+    bot._register_listener = _register_listener
     return bot
-
-
-def _run(coro):
-    return asyncio.run(coro)
 
 
 def _input_dlg():
@@ -235,92 +240,105 @@ def _msgbox_dlg():
     return _make_dialog(2, 0, "Info", "OK", "", "Hello", MagicMock())
 
 
-def _call(cb, dlg):
-    """Call a callback that may be plain or async (no-filter vs filtered)."""
-    import asyncio
-    import inspect
-
-    if inspect.iscoroutinefunction(cb):
-        asyncio.run(cb(dlg))
-    else:
-        cb(dlg)
+async def _fire(bot, dlg):
+    """Start all unstarted listeners, broadcast a dialog event, then yield."""
+    for listener in bot._listeners:
+        if listener._task is None:
+            listener.start()
+    await asyncio.sleep(0)
+    bot._bus.broadcast(("dialog", dlg))
+    await asyncio.sleep(0)
 
 
 def test_on_dialog_bare_receives_all():
     """Bare @bot.on_dialog passes every dialog to the handler."""
-    bot = _mock_self()
-    received = []
-    SAMPBot.on_dialog(bot, lambda dlg: received.append(dlg))
-    _call(bot._bus._cb_dialog, _input_dlg())
-    _call(bot._bus._cb_dialog, _msgbox_dlg())
-    assert len(received) == 2
+    async def _inner():
+        bot = _mock_self()
+        received = []
+        SAMPBot.on_dialog(bot, lambda dlg: received.append(dlg))
+        await _fire(bot, _input_dlg())
+        await _fire(bot, _msgbox_dlg())
+        assert len(received) == 2
+    asyncio.run(_inner())
 
 
 def test_on_dialog_no_filter_receives_all():
     """@bot.on_dialog() with no args passes every dialog."""
-    bot = _mock_self()
-    received = []
-    SAMPBot.on_dialog(bot)(lambda dlg: received.append(dlg))
-    _call(bot._bus._cb_dialog, _input_dlg())
-    _call(bot._bus._cb_dialog, _msgbox_dlg())
-    assert len(received) == 2
+    async def _inner():
+        bot = _mock_self()
+        received = []
+        SAMPBot.on_dialog(bot)(lambda dlg: received.append(dlg))
+        await _fire(bot, _input_dlg())
+        await _fire(bot, _msgbox_dlg())
+        assert len(received) == 2
+    asyncio.run(_inner())
 
 
 def test_on_dialog_type_filter_passes_matching():
     """dialog_type=InputDialog lets InputDialog through."""
-    bot = _mock_self()
-    received = []
-    SAMPBot.on_dialog(bot, dialog_type=InputDialog)(lambda dlg: received.append(dlg))
-    _run(bot._bus._cb_dialog(_input_dlg()))
-    assert len(received) == 1
-    assert isinstance(received[0], InputDialog)
+    async def _inner():
+        bot = _mock_self()
+        received = []
+        SAMPBot.on_dialog(bot, dialog_type=InputDialog)(lambda dlg: received.append(dlg))
+        await _fire(bot, _input_dlg())
+        assert len(received) == 1
+        assert isinstance(received[0], InputDialog)
+    asyncio.run(_inner())
 
 
 def test_on_dialog_type_filter_blocks_other():
     """dialog_type=InputDialog blocks MsgboxDialog."""
-    bot = _mock_self()
-    received = []
-    SAMPBot.on_dialog(bot, dialog_type=InputDialog)(lambda dlg: received.append(dlg))
-    _run(bot._bus._cb_dialog(_msgbox_dlg()))
-    assert len(received) == 0
+    async def _inner():
+        bot = _mock_self()
+        received = []
+        SAMPBot.on_dialog(bot, dialog_type=InputDialog)(lambda dlg: received.append(dlg))
+        await _fire(bot, _msgbox_dlg())
+        assert len(received) == 0
+    asyncio.run(_inner())
 
 
 def test_on_dialog_dialog_id_filter():
     """dialog_id= matches only the exact ID."""
-    bot = _mock_self()
-    received = []
-    SAMPBot.on_dialog(bot, dialog_id=1)(lambda dlg: received.append(dlg))
-    _run(bot._bus._cb_dialog(_input_dlg()))  # id=1 — should pass
-    _run(bot._bus._cb_dialog(_msgbox_dlg()))  # id=2 — should be blocked
-    assert len(received) == 1
+    async def _inner():
+        bot = _mock_self()
+        received = []
+        SAMPBot.on_dialog(bot, dialog_id=1)(lambda dlg: received.append(dlg))
+        await _fire(bot, _input_dlg())   # id=1 — should pass
+        await _fire(bot, _msgbox_dlg())  # id=2 — should be blocked
+        assert len(received) == 1
+    asyncio.run(_inner())
 
 
 def test_on_dialog_predicate_filter():
     """predicate= is applied on top of type filter."""
-    bot = _mock_self()
-    received = []
-    SAMPBot.on_dialog(
-        bot,
-        dialog_type=InputDialog,
-        predicate=lambda d: "Login" in d.title,
-    )(lambda dlg: received.append(dlg))
-    _run(bot._bus._cb_dialog(_input_dlg()))  # title="Login" — passes
-    other = _make_dialog(3, 1, "Register", "OK", "", "", MagicMock())
-    _run(bot._bus._cb_dialog(other))  # title="Register" — blocked by predicate
-    assert len(received) == 1
+    async def _inner():
+        bot = _mock_self()
+        received = []
+        SAMPBot.on_dialog(
+            bot,
+            dialog_type=InputDialog,
+            predicate=lambda d: "Login" in d.title,
+        )(lambda dlg: received.append(dlg))
+        await _fire(bot, _input_dlg())  # title="Login" — passes
+        other = _make_dialog(3, 1, "Register", "OK", "", "", MagicMock())
+        await _fire(bot, other)  # title="Register" — blocked by predicate
+        assert len(received) == 1
+    asyncio.run(_inner())
 
 
 def test_on_dialog_async_handler():
     """Async handlers are awaited correctly."""
-    bot = _mock_self()
-    received = []
+    async def _inner():
+        bot = _mock_self()
+        received = []
 
-    async def handler(dlg):
-        received.append(dlg)
+        async def handler(dlg):
+            received.append(dlg)
 
-    SAMPBot.on_dialog(bot, dialog_type=InputDialog)(handler)
-    _run(bot._bus._cb_dialog(_input_dlg()))
-    assert len(received) == 1
+        SAMPBot.on_dialog(bot, dialog_type=InputDialog)(handler)
+        await _fire(bot, _input_dlg())
+        assert len(received) == 1
+    asyncio.run(_inner())
 
 
 # ── Run all ──────────────────────────────────────────────────────────────────

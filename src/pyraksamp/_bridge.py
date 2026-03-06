@@ -1,10 +1,9 @@
 """_CallbackBridge — wires _SAMPClient Rust callbacks to _EventBus."""
 
 import asyncio
+from collections.abc import Callable
 
 from pyraksamp._bus import _EventBus
-from pyraksamp._actions import _Actions
-from pyraksamp.dialogs import _make_dialog
 from pyraksamp.events import (
     ChatMessage,
     ServerMessage,
@@ -45,140 +44,73 @@ class _CallbackBridge:
 
     The Rust run() thread invokes these callbacks with the GIL held; we must
     not block.  All work is scheduled onto the loop via call_soon_threadsafe so
-    that both the broadcast and user callback execute in the event loop thread.
+    that broadcasts execute in the event loop thread.
     """
 
-    def __init__(self, client, bus: _EventBus, actions: _Actions) -> None:
+    def __init__(self, client, bus: _EventBus, make_dialog: Callable) -> None:
         self._client = client
         self._bus = bus
-        self._actions = actions
+        self._make_dialog = make_dialog
 
     def setup(self, loop: asyncio.AbstractEventLoop) -> None:
         """Wire all Rust callbacks to the asyncio event loop."""
         bus = self._bus
+        make_dialog = self._make_dialog
 
         def on_connect():
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("connect",)),
-                    bus.fire(bus._cb_connect),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("connect",)))
 
         def on_disconnect():
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("disconnect",)),
-                    bus.fire(bus._cb_disconnect),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("disconnect",)))
 
         def on_rpc(rpc_id: int, data: bytes):
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("rpc", rpc_id, data)),
-                    bus.fire(bus._cb_rpc, rpc_id, data),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("rpc", rpc_id, data)))
 
         def on_player_join(pid: int, name: str):
             evt = PlayerJoin(player_id=pid, name=name)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("player_join", evt)),
-                    bus.fire(bus._cb_player_join, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("player_join", evt)))
 
         def on_player_quit(pid: int, reason: int):
             evt = PlayerQuit(player_id=pid, reason=reason)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("player_quit", evt)),
-                    bus.fire(bus._cb_player_quit, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("player_quit", evt)))
 
         def on_chat(pid: int, text: str):
             evt = ChatMessage(player_id=pid, text=text)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("chat", evt)),
-                    bus.fire(bus._cb_chat, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("chat", evt)))
 
         def on_client_message(color: int, text: str):
             evt = ServerMessage(color=color, text=text)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("client_message", evt)),
-                    bus.fire(bus._cb_client_message, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("client_message", evt)))
 
         def on_dialog(
             did: int, style: int, title: str, btn1: str, btn2: str, body: str
         ):
-            evt = _make_dialog(did, style, title, btn1, btn2, body, self._actions)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("dialog", evt)),
-                    bus.fire(bus._cb_dialog, evt),
-                )
-            )
+            evt = make_dialog(did, style, title, btn1, btn2, body)
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("dialog", evt)))
 
         def on_game_text(style: int, ms: int, text: str):
             evt = GameText(style=style, duration_ms=ms, text=text)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("game_text", evt)),
-                    bus.fire(bus._cb_game_text, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("game_text", evt)))
 
         def on_set_health(hp: float):
             evt = SetHealth(health=hp)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("set_health", evt)),
-                    bus.fire(bus._cb_set_health, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("set_health", evt)))
 
         def on_set_armour(arm: float):
             evt = SetArmour(armour=arm)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("set_armour", evt)),
-                    bus.fire(bus._cb_set_armour, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("set_armour", evt)))
 
         def on_set_position(x: float, y: float, z: float):
             evt = SetPosition(x=x, y=y, z=z)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("set_position", evt)),
-                    bus.fire(bus._cb_set_position, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("set_position", evt)))
 
         def on_checkpoint(x: float, y: float, z: float, size: float):
             evt = Checkpoint(x=x, y=y, z=z, size=size)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("checkpoint", evt)),
-                    bus.fire(bus._cb_checkpoint, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("checkpoint", evt)))
 
         def on_checkpoint_disabled():
             loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("checkpoint_disabled",)),
-                    bus.fire(bus._cb_checkpoint_disabled),
-                )
+                lambda: bus.broadcast(("checkpoint_disabled",))
             )
 
         def on_player_streamed_in(
@@ -204,65 +136,36 @@ class _CallbackBridge:
                 fight_style=fs,
             )
             loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("player_streamed_in", evt)),
-                    bus.fire(bus._cb_player_streamed_in, evt),
-                )
+                lambda: bus.broadcast(("player_streamed_in", evt))
             )
 
         def on_player_streamed_out(pid: int):
             evt = PlayerStreamOut(player_id=pid)
             loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("player_streamed_out", evt)),
-                    bus.fire(bus._cb_player_streamed_out, evt),
-                )
+                lambda: bus.broadcast(("player_streamed_out", evt))
             )
 
         def on_player_name(pid: int, name: str, success: int):
             evt = PlayerNameChange(player_id=pid, name=name, success=success)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("player_name", evt)),
-                    bus.fire(bus._cb_player_name, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("player_name", evt)))
 
         def on_toggle_controllable(moveable: int):
             evt = ToggleControllable(moveable=moveable)
             loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("toggle_controllable", evt)),
-                    bus.fire(bus._cb_toggle_controllable, evt),
-                )
+                lambda: bus.broadcast(("toggle_controllable", evt))
             )
 
         def on_player_time(hour: int, minute: int):
             evt = PlayerTime(hour=hour, minute=minute)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("player_time", evt)),
-                    bus.fire(bus._cb_player_time, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("player_time", evt)))
 
         def on_death_message(killer_id: int, player_id: int, weapon: int):
             evt = DeathMessage(killer_id=killer_id, player_id=player_id, weapon=weapon)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("death_message", evt)),
-                    bus.fire(bus._cb_death_message, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("death_message", evt)))
 
         def on_set_armed_weapon(weapon_id: int):
             evt = SetArmedWeapon(weapon_id=weapon_id)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("set_armed_weapon", evt)),
-                    bus.fire(bus._cb_set_armed_weapon, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("set_armed_weapon", evt)))
 
         def on_spawn_info(
             team: int,
@@ -288,119 +191,58 @@ class _CallbackBridge:
                 weapons=(w1, w2, w3),
                 ammo=(a1, a2, a3),
             )
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("spawn_info", evt)),
-                    bus.fire(bus._cb_spawn_info, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("spawn_info", evt)))
 
         def on_player_team(pid: int, team: int):
             evt = PlayerTeam(player_id=pid, team=team)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("player_team", evt)),
-                    bus.fire(bus._cb_player_team, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("player_team", evt)))
 
         def on_put_in_vehicle(vehicle_id: int, seat_id: int):
             evt = PutInVehicle(vehicle_id=vehicle_id, seat_id=seat_id)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("put_in_vehicle", evt)),
-                    bus.fire(bus._cb_put_in_vehicle, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("put_in_vehicle", evt)))
 
         def on_remove_from_vehicle():
             loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("remove_from_vehicle",)),
-                    bus.fire(bus._cb_remove_from_vehicle),
-                )
+                lambda: bus.broadcast(("remove_from_vehicle",))
             )
 
         def on_player_color(pid: int, color: int):
             evt = PlayerColor(player_id=pid, color=color)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("player_color", evt)),
-                    bus.fire(bus._cb_player_color, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("player_color", evt)))
 
         def on_world_time(hour: int):
             evt = WorldTime(hour=hour)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("world_time", evt)),
-                    bus.fire(bus._cb_world_time, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("world_time", evt)))
 
         def on_toggle_spectating(spectating: bool):
             evt = ToggleSpectating(spectating=spectating)
             loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("toggle_spectating", evt)),
-                    bus.fire(bus._cb_toggle_spectating, evt),
-                )
+                lambda: bus.broadcast(("toggle_spectating", evt))
             )
 
         def on_wanted_level(level: int):
             evt = WantedLevel(level=level)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("wanted_level", evt)),
-                    bus.fire(bus._cb_wanted_level, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("wanted_level", evt)))
 
         def on_weapon_ammo(weapon_id: int, ammo: int):
             evt = WeaponAmmo(weapon_id=weapon_id, ammo=ammo)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("weapon_ammo", evt)),
-                    bus.fire(bus._cb_weapon_ammo, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("weapon_ammo", evt)))
 
         def on_gravity(gravity: float):
             evt = Gravity(gravity=gravity)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("gravity", evt)),
-                    bus.fire(bus._cb_gravity, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("gravity", evt)))
 
         def on_weather(weather_id: int):
             evt = Weather(weather_id=weather_id)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("weather", evt)),
-                    bus.fire(bus._cb_weather, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("weather", evt)))
 
         def on_player_skin(pid: int, skin_id: int):
             evt = PlayerSkin(player_id=pid, skin_id=skin_id)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("player_skin", evt)),
-                    bus.fire(bus._cb_player_skin, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("player_skin", evt)))
 
         def on_set_interior(interior_id: int):
             evt = SetInterior(interior_id=interior_id)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("set_interior", evt)),
-                    bus.fire(bus._cb_set_interior, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("set_interior", evt)))
 
         def on_vehicle_streamed_in(
             vid: int,
@@ -443,29 +285,18 @@ class _CallbackBridge:
                 body_color2=body_color2,
             )
             loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("vehicle_streamed_in", evt)),
-                    bus.fire(bus._cb_vehicle_streamed_in, evt),
-                )
+                lambda: bus.broadcast(("vehicle_streamed_in", evt))
             )
 
         def on_vehicle_streamed_out(vid: int):
             evt = VehicleStreamOut(vehicle_id=vid)
             loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("vehicle_streamed_out", evt)),
-                    bus.fire(bus._cb_vehicle_streamed_out, evt),
-                )
+                lambda: bus.broadcast(("vehicle_streamed_out", evt))
             )
 
         def on_player_death(pid: int):
             evt = PlayerDeath(player_id=pid)
-            loop.call_soon_threadsafe(
-                lambda: (
-                    bus.broadcast(("player_death", evt)),
-                    bus.fire(bus._cb_player_death, evt),
-                )
-            )
+            loop.call_soon_threadsafe(lambda: bus.broadcast(("player_death", evt)))
 
         self._client.on_connect = on_connect
         self._client.on_disconnect = on_disconnect

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from pyraksamp import SAMPBot, SAMPClient, gen_gpci
 from pyraksamp import _core
+from pyraksamp._listener import _CallbackListener, _StreamListener
 from pyraksamp.dialogs import InputDialog
 
 
@@ -35,15 +36,6 @@ def test_gen_gpci_varies():
 # ── SAMPBot.__init__ ──────────────────────────────────────────────────────────
 
 
-def make_bot(gpci="AABBCCDDEE1122334455667788990011223344"):
-    """Create a SAMPBot with a mocked _SAMPClient (no network)."""
-    with patch("pyraksamp._SAMPClient") as MockClient:
-        bot = SAMPBot("127.0.0.1", 7777, "TestBot", "", gpci)
-        mock_instance = MockClient.return_value
-        bot._mock_client = mock_instance
-    return bot
-
-
 def test_init_uses_provided_gpci():
     gpci = "AABBCCDDEE1122334455667788990011223344"
     with patch("pyraksamp._SAMPClient") as MockClient:
@@ -67,7 +59,7 @@ def test_init_creates_all_components():
         assert bot._bus is not None
         assert bot._actions is not None
         assert bot._bridge is not None
-        assert bot._streams is not None
+        assert isinstance(bot._listeners, list)
 
 
 # ── Properties ────────────────────────────────────────────────────────────────
@@ -104,71 +96,84 @@ def test_stop_calls_client():
         MockClient.return_value.stop.assert_called_once()
 
 
-# ── Callback delegation → _bus ────────────────────────────────────────────────
+# ── on_* registers _CallbackListener ──────────────────────────────────────────
 
 
-def test_on_connect_delegates_to_bus():
+def test_on_connect_registers_listener():
     with patch("pyraksamp._SAMPClient"):
         bot = SAMPBot("host")
 
-        def fn():
-            pass
+        def fn(): pass
 
         bot.on_connect(fn)
-        assert bot._bus._cb_connect is fn
+        assert any(l._fn is fn for l in bot._listeners)
 
 
-def test_on_dialog_delegates_to_bus():
+def test_on_connect_returns_fn():
+    with patch("pyraksamp._SAMPClient"):
+        bot = SAMPBot("host")
+
+        def fn(): pass
+
+        assert bot.on_connect(fn) is fn
+
+
+def test_on_dialog_registers_listener():
     with patch("pyraksamp._SAMPClient"):
         bot = SAMPBot("host")
         received = []
         bot.on_dialog(dialog_type=InputDialog)(lambda dlg: received.append(dlg))
-        assert bot._bus._cb_dialog is not None  # wrapper was installed
+        assert len(bot._listeners) == 1
+        assert isinstance(bot._listeners[0], _CallbackListener)
 
 
-# ── Action delegation → _actions ──────────────────────────────────────────────
-
-
-def test_send_chat_delegates_to_actions():
-    with patch("pyraksamp._SAMPClient") as MockClient:
-        bot = SAMPBot("host")
-        bot.send_chat("hello")
-        # _actions.send_chat ultimately calls client.send_rpc with RPC_CHAT
-        MockClient.return_value.send_rpc.assert_called_once()
-        args = MockClient.return_value.send_rpc.call_args.args
-        assert args[0] == _core.RPC_CHAT
-
-
-def test_send_dialog_response_delegates():
-    with patch("pyraksamp._SAMPClient") as MockClient:
-        bot = SAMPBot("host")
-        bot.send_dialog_response(5, 1, 2, "text")
-        MockClient.return_value.send_dialog_response.assert_called_once_with(
-            5, 1, 2, "text"
-        )
-
-
-# ── Stream delegation → _streams ──────────────────────────────────────────────
-
-
-def test_chat_stream_delegates():
+def test_on_connect_tag_is_connect():
     with patch("pyraksamp._SAMPClient"):
         bot = SAMPBot("host")
-        # Both calls should return an async generator backed by the same bus
-        gen_a = bot.chat()
-        gen_b = bot._streams.chat()
-        # They are independent generator instances but backed by the same bus
-        assert type(gen_a) is type(gen_b)
+
+        def fn(): pass
+
+        bot.on_connect(fn)
+        listener = next(l for l in bot._listeners if l._fn is fn)
+        assert listener._tag == "connect"
 
 
-def test_events_stream_delegates():
+def test_multiple_on_connect_handlers_allowed():
+    with patch("pyraksamp._SAMPClient"):
+        bot = SAMPBot("host")
+
+        def fn1(): pass
+        def fn2(): pass
+
+        bot.on_connect(fn1)
+        bot.on_connect(fn2)
+        connect_listeners = [l for l in bot._listeners if l._tag == "connect"]
+        assert len(connect_listeners) == 2
+
+
+# ── Stream methods return _StreamListener ─────────────────────────────────────
+
+
+def test_chat_returns_stream_listener():
+    with patch("pyraksamp._SAMPClient"):
+        bot = SAMPBot("host")
+        assert isinstance(bot.chat(), _StreamListener)
+
+
+def test_dialogs_returns_stream_listener():
+    with patch("pyraksamp._SAMPClient"):
+        bot = SAMPBot("host")
+        assert isinstance(bot.dialogs(), _StreamListener)
+
+
+def test_events_stream_is_async_iterable():
     with patch("pyraksamp._SAMPClient"):
         bot = SAMPBot("host")
         gen = bot.events()
         assert hasattr(gen, "__aiter__")
 
 
-# ── start() wires bridge ──────────────────────────────────────────────────────
+# ── start() wires bridge and starts listeners ─────────────────────────────────
 
 
 def test_start_wires_bridge_and_calls_executor():
@@ -191,6 +196,61 @@ def test_start_wires_bridge_and_calls_executor():
         assert result is True
 
     asyncio.run(_inner())
+
+
+def test_start_starts_all_registered_listeners():
+    async def _inner():
+        with patch("pyraksamp._SAMPClient") as MockClient:
+            MockClient.return_value.start.return_value = True
+            bot = SAMPBot("host")
+
+            def fn(): pass
+
+            bot.on_connect(fn)
+            bot.on_disconnect(fn)
+            assert all(l._task is None for l in bot._listeners)
+
+            await bot.start()
+            assert all(l._task is not None for l in bot._listeners)
+
+    asyncio.run(_inner())
+
+
+def test_register_listener_after_start_starts_immediately():
+    async def _inner():
+        with patch("pyraksamp._SAMPClient") as MockClient:
+            MockClient.return_value.start.return_value = True
+            bot = SAMPBot("host")
+            await bot.start()
+
+            def fn(): pass
+
+            bot.on_connect(fn)
+            listener = next(l for l in bot._listeners if l._fn is fn)
+            assert listener._task is not None
+
+    asyncio.run(_inner())
+
+
+# ── Action delegation ─────────────────────────────────────────────────────────
+
+
+def test_send_chat_delegates_to_actions():
+    with patch("pyraksamp._SAMPClient") as MockClient:
+        bot = SAMPBot("host")
+        bot.send_chat("hello")
+        MockClient.return_value.send_rpc.assert_called_once()
+        args = MockClient.return_value.send_rpc.call_args.args
+        assert args[0] == _core.RPC_CHAT
+
+
+def test_send_dialog_response_delegates():
+    with patch("pyraksamp._SAMPClient") as MockClient:
+        bot = SAMPBot("host")
+        bot.send_dialog_response(5, 1, 2, "text")
+        MockClient.return_value.send_dialog_response.assert_called_once_with(
+            5, 1, 2, "text"
+        )
 
 
 # ── SAMPClient alias ──────────────────────────────────────────────────────────

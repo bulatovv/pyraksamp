@@ -1,19 +1,13 @@
-"""Isolated unit tests for _EventBus."""
+"""Unit tests for _EventBus, _StreamListener, and _CallbackListener."""
 
 import asyncio
-from unittest.mock import MagicMock
 
 from pyraksamp._bus import _EventBus
-from pyraksamp.dialogs import _make_dialog, InputDialog
-from pyraksamp.events import (
-    ChatMessage,
-    PlayerJoin,
-    ServerMessage,
-    GameText,
-)
+from pyraksamp._listener import _CallbackListener, _StreamListener
+from pyraksamp.events import ChatMessage, PlayerJoin
 
 
-# ── subscribe / unsubscribe ───────────────────────────────────────────────────
+# ── _EventBus ─────────────────────────────────────────────────────────────────
 
 
 def test_subscribe_adds_queue():
@@ -31,9 +25,6 @@ def test_unsubscribe_removes_queue():
     assert q not in bus._subscribers
 
 
-# ── broadcast ─────────────────────────────────────────────────────────────────
-
-
 def test_broadcast_delivers_to_all_queues():
     bus = _EventBus()
     q1, q2 = asyncio.Queue(), asyncio.Queue()
@@ -49,262 +40,273 @@ def test_broadcast_no_subscribers_is_noop():
     bus.broadcast(("connect",))  # must not raise
 
 
-# ── fire ──────────────────────────────────────────────────────────────────────
+# ── _StreamListener ───────────────────────────────────────────────────────────
 
 
-def test_fire_none_is_noop():
-    bus = _EventBus()
-    bus.fire(None)  # must not raise
+def test_stream_listener_yields_matching_tag():
+    async def _inner():
+        bus = _EventBus()
+        results = []
+
+        async def consume():
+            async for msg in _StreamListener(bus, "chat"):
+                results.append(msg)
+
+        task = asyncio.create_task(consume())
+        await asyncio.sleep(0)
+        msg = ChatMessage(player_id=1, text="hi")
+        bus.broadcast(("chat", msg))
+        bus.broadcast(("disconnect",))
+        await task
+        assert results == [msg]
+
+    asyncio.run(_inner())
 
 
-def test_fire_sync_callback():
-    bus = _EventBus()
-    received = []
-    bus.fire(lambda x: received.append(x), 42)
-    assert received == [42]
+def test_stream_listener_skips_other_tags():
+    async def _inner():
+        bus = _EventBus()
+        results = []
+
+        async def consume():
+            async for msg in _StreamListener(bus, "chat"):
+                results.append(msg)
+
+        task = asyncio.create_task(consume())
+        await asyncio.sleep(0)
+        bus.broadcast(("rpc", 1, b""))
+        bus.broadcast(("chat", ChatMessage(player_id=1, text="yes")))
+        bus.broadcast(("disconnect",))
+        await task
+        assert len(results) == 1
+
+    asyncio.run(_inner())
 
 
-def test_fire_async_callback():
-    bus = _EventBus()
-    received = []
+def test_stream_listener_predicate_filter():
+    async def _inner():
+        bus = _EventBus()
+        results = []
 
-    async def cb(x):
-        received.append(x)
+        async def consume():
+            async for msg in _StreamListener(bus, "chat", lambda m: m.player_id == 3):
+                results.append(msg)
 
-    async def _run():
-        bus.fire(cb, 99)
-        await asyncio.sleep(0)  # allow task to execute
+        task = asyncio.create_task(consume())
+        await asyncio.sleep(0)
+        bus.broadcast(("chat", ChatMessage(player_id=1, text="no")))
+        bus.broadcast(("chat", ChatMessage(player_id=3, text="yes")))
+        bus.broadcast(("disconnect",))
+        await task
+        assert len(results) == 1 and results[0].player_id == 3
 
-    asyncio.run(_run())
-    assert received == [99]
-
-
-# ── on_connect / on_disconnect ────────────────────────────────────────────────
-
-
-def test_on_connect_stores_and_returns_fn():
-    bus = _EventBus()
-
-    def fn():
-        pass
-
-    result = bus.on_connect(fn)
-    assert bus._cb_connect is fn
-    assert result is fn
+    asyncio.run(_inner())
 
 
-def test_on_disconnect_stores_and_returns_fn():
-    bus = _EventBus()
+def test_stream_listener_stops_on_disconnect():
+    async def _inner():
+        bus = _EventBus()
+        count = 0
 
-    def fn():
-        pass
+        async def consume():
+            nonlocal count
+            async for _ in _StreamListener(bus, "chat"):
+                count += 1
 
-    result = bus.on_disconnect(fn)
-    assert bus._cb_disconnect is fn
-    assert result is fn
+        task = asyncio.create_task(consume())
+        await asyncio.sleep(0)
+        bus.broadcast(("disconnect",))
+        await task
+        assert count == 0
 
-
-# ── on_rpc ────────────────────────────────────────────────────────────────────
-
-
-def test_on_rpc_no_filter_stores_fn_directly():
-    bus = _EventBus()
-
-    def fn(rid, data):
-        pass
-
-    bus.on_rpc(fn)
-    assert bus._cb_rpc is fn
+    asyncio.run(_inner())
 
 
-def test_on_rpc_rpc_id_filter_skips_non_matching():
-    bus = _EventBus()
-    received = []
-    bus.on_rpc(rpc_id=10)(lambda rid, data: received.append(rid))
-    asyncio.run(bus._cb_rpc(5, b""))
-    assert received == []
+def test_stream_listener_unsubscribes_on_close():
+    async def _inner():
+        bus = _EventBus()
+
+        async def consume():
+            async for _ in _StreamListener(bus, "chat"):
+                pass
+
+        task = asyncio.create_task(consume())
+        await asyncio.sleep(0)
+        assert len(bus._subscribers) == 1
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        await asyncio.sleep(0)
+        assert len(bus._subscribers) == 0
+
+    asyncio.run(_inner())
 
 
-def test_on_rpc_rpc_id_filter_calls_matching():
-    bus = _EventBus()
-    received = []
-    bus.on_rpc(rpc_id=10)(lambda rid, data: received.append(rid))
-    asyncio.run(bus._cb_rpc(10, b"hi"))
-    assert received == [10]
+def test_stream_listener_fan_out():
+    async def _inner():
+        bus = _EventBus()
+        a, b = [], []
+
+        async def consume(out):
+            async for msg in _StreamListener(bus, "chat"):
+                out.append(msg)
+
+        ta = asyncio.create_task(consume(a))
+        tb = asyncio.create_task(consume(b))
+        await asyncio.sleep(0)
+        msg = ChatMessage(player_id=1, text="x")
+        bus.broadcast(("chat", msg))
+        bus.broadcast(("disconnect",))
+        await ta
+        await tb
+        assert a == [msg] and b == [msg]
+
+    asyncio.run(_inner())
 
 
-def test_on_rpc_predicate_filter():
-    bus = _EventBus()
-    received = []
-    bus.on_rpc(predicate=lambda rid, data: len(data) > 2)(
-        lambda rid, data: received.append(data)
-    )
-    asyncio.run(bus._cb_rpc(1, b"ab"))  # 2 bytes — blocked
-    asyncio.run(bus._cb_rpc(1, b"abc"))  # 3 bytes — passes
-    assert received == [b"abc"]
+# ── _CallbackListener ─────────────────────────────────────────────────────────
 
 
-# ── on_player_join ────────────────────────────────────────────────────────────
-
-
-def test_on_player_join_no_filter():
-    bus = _EventBus()
-    received = []
-    bus.on_player_join(lambda evt: received.append(evt))
-    evt = PlayerJoin(player_id=1, name="Alice")
-    bus._cb_player_join(evt)
-    assert received == [evt]
-
-
-def test_on_player_join_player_id_filter_passes():
-    bus = _EventBus()
-    received = []
-    bus.on_player_join(player_id=1)(lambda evt: received.append(evt))
-    asyncio.run(bus._cb_player_join(PlayerJoin(player_id=1, name="Alice")))
-    assert len(received) == 1
-
-
-def test_on_player_join_player_id_filter_blocks():
-    bus = _EventBus()
-    received = []
-    bus.on_player_join(player_id=1)(lambda evt: received.append(evt))
-    asyncio.run(bus._cb_player_join(PlayerJoin(player_id=2, name="Bob")))
-    assert received == []
-
-
-def test_on_player_join_name_filter():
-    bus = _EventBus()
-    received = []
-    bus.on_player_join(name="Alice")(lambda evt: received.append(evt))
-    asyncio.run(bus._cb_player_join(PlayerJoin(player_id=1, name="Alice")))
-    asyncio.run(bus._cb_player_join(PlayerJoin(player_id=2, name="Bob")))
-    assert len(received) == 1 and received[0].name == "Alice"
-
-
-# ── on_chat ───────────────────────────────────────────────────────────────────
-
-
-def test_on_chat_player_id_filter():
-    bus = _EventBus()
-    received = []
-    bus.on_chat(player_id=3)(lambda evt: received.append(evt))
-    asyncio.run(bus._cb_chat(ChatMessage(player_id=3, text="hi")))
-    asyncio.run(bus._cb_chat(ChatMessage(player_id=4, text="bye")))
-    assert len(received) == 1 and received[0].player_id == 3
-
-
-# ── on_client_message ─────────────────────────────────────────────────────────
-
-
-def test_on_client_message_color_filter():
-    bus = _EventBus()
-    received = []
-    bus.on_client_message(color=0xFF0000FF)(lambda evt: received.append(evt))
-    asyncio.run(bus._cb_client_message(ServerMessage(color=0xFF0000FF, text="red")))
-    asyncio.run(bus._cb_client_message(ServerMessage(color=0x00FF00FF, text="green")))
-    assert len(received) == 1 and received[0].color == 0xFF0000FF
-
-
-# ── on_dialog ─────────────────────────────────────────────────────────────────
-
-
-def test_on_dialog_no_filter_stores_fn_directly():
+def test_callback_listener_subscribes_on_construction():
     bus = _EventBus()
 
-    def fn(dlg):
-        pass
+    def fn(evt): pass
 
-    bus.on_dialog(fn)
-    assert bus._cb_dialog is fn
-
-
-def test_on_dialog_type_filter_passes_matching():
-    bus = _EventBus()
-    received = []
-    bot = MagicMock()
-    bus.on_dialog(dialog_type=InputDialog)(lambda dlg: received.append(dlg))
-    dlg = _make_dialog(1, 1, "Login", "OK", "Cancel", "name", bot)
-    asyncio.run(bus._cb_dialog(dlg))
-    assert len(received) == 1 and isinstance(received[0], InputDialog)
+    _CallbackListener(bus, "chat", fn)
+    assert len(bus._subscribers) == 1
 
 
-def test_on_dialog_type_filter_blocks_wrong_type():
-    bus = _EventBus()
-    received = []
-    bot = MagicMock()
-    bus.on_dialog(dialog_type=InputDialog)(lambda dlg: received.append(dlg))
-    dlg = _make_dialog(2, 0, "Info", "OK", "", "body", bot)  # MsgboxDialog
-    asyncio.run(bus._cb_dialog(dlg))
-    assert received == []
+def test_callback_listener_invokes_sync_fn():
+    async def _inner():
+        bus = _EventBus()
+        received = []
+        listener = _CallbackListener(bus, "chat", lambda msg: received.append(msg))
+        listener.start()
+        await asyncio.sleep(0)
+        msg = ChatMessage(player_id=1, text="hello")
+        bus.broadcast(("chat", msg))
+        await asyncio.sleep(0)
+        assert received == [msg]
+
+    asyncio.run(_inner())
 
 
-def test_on_dialog_dialog_id_filter():
-    bus = _EventBus()
-    received = []
-    bot = MagicMock()
-    bus.on_dialog(dialog_id=5)(lambda dlg: received.append(dlg))
-    asyncio.run(bus._cb_dialog(_make_dialog(5, 0, "T", "OK", "", "b", bot)))
-    asyncio.run(bus._cb_dialog(_make_dialog(6, 0, "T", "OK", "", "b", bot)))
-    assert len(received) == 1 and received[0].dialog_id == 5
+def test_callback_listener_invokes_async_fn():
+    async def _inner():
+        bus = _EventBus()
+        received = []
+
+        async def cb(msg):
+            received.append(msg)
+
+        listener = _CallbackListener(bus, "chat", cb)
+        listener.start()
+        await asyncio.sleep(0)
+        msg = ChatMessage(player_id=2, text="async")
+        bus.broadcast(("chat", msg))
+        await asyncio.sleep(0)
+        assert received == [msg]
+
+    asyncio.run(_inner())
 
 
-def test_on_dialog_type_and_predicate():
-    bus = _EventBus()
-    received = []
-    bot = MagicMock()
-    bus.on_dialog(
-        dialog_type=InputDialog,
-        predicate=lambda d: "Login" in d.title,
-    )(lambda dlg: received.append(dlg))
-    asyncio.run(
-        bus._cb_dialog(_make_dialog(1, 1, "Login", "OK", "", "", bot))
-    )  # passes
-    asyncio.run(
-        bus._cb_dialog(_make_dialog(2, 1, "Register", "OK", "", "", bot))
-    )  # blocked
-    assert len(received) == 1
+def test_callback_listener_predicate_filter():
+    async def _inner():
+        bus = _EventBus()
+        received = []
+        listener = _CallbackListener(
+            bus,
+            "player_join",
+            lambda evt: received.append(evt),
+            predicate=lambda evt: evt.player_id == 5,
+        )
+        listener.start()
+        await asyncio.sleep(0)
+        bus.broadcast(("player_join", PlayerJoin(player_id=1, name="Bob")))
+        bus.broadcast(("player_join", PlayerJoin(player_id=5, name="Alice")))
+        await asyncio.sleep(0)
+        assert len(received) == 1 and received[0].player_id == 5
+
+    asyncio.run(_inner())
 
 
-# ── on_game_text ──────────────────────────────────────────────────────────────
+def test_callback_listener_no_arg_extract():
+    async def _inner():
+        bus = _EventBus()
+        called = []
+        listener = _CallbackListener(
+            bus, "connect", lambda: called.append(True), extract=lambda e: ()
+        )
+        listener.start()
+        await asyncio.sleep(0)
+        bus.broadcast(("connect",))
+        await asyncio.sleep(0)
+        assert called == [True]
+
+    asyncio.run(_inner())
 
 
-def test_on_game_text_style_filter():
-    bus = _EventBus()
-    received = []
-    bus.on_game_text(style=3)(lambda evt: received.append(evt))
-    asyncio.run(bus._cb_game_text(GameText(style=3, duration_ms=1000, text="go")))
-    asyncio.run(bus._cb_game_text(GameText(style=1, duration_ms=500, text="no")))
-    assert len(received) == 1 and received[0].style == 3
+def test_callback_listener_two_arg_extract():
+    async def _inner():
+        bus = _EventBus()
+        received = []
+        listener = _CallbackListener(
+            bus,
+            "rpc",
+            lambda rid, data: received.append((rid, data)),
+            extract=lambda e: (e[1], e[2]),
+        )
+        listener.start()
+        await asyncio.sleep(0)
+        bus.broadcast(("rpc", 42, b"\xff"))
+        await asyncio.sleep(0)
+        assert received == [(42, b"\xff")]
+
+    asyncio.run(_inner())
 
 
-# ── Simple on_* decorators ────────────────────────────────────────────────────
+def test_callback_listener_stops_on_disconnect():
+    async def _inner():
+        bus = _EventBus()
+        received = []
+        listener = _CallbackListener(bus, "chat", lambda m: received.append(m))
+        listener.start()
+        await asyncio.sleep(0)
+        bus.broadcast(("disconnect",))
+        await asyncio.sleep(0)
+        bus.broadcast(("chat", ChatMessage(player_id=1, text="late")))
+        await asyncio.sleep(0)
+        assert received == []
+
+    asyncio.run(_inner())
 
 
-def test_simple_decorators_store_fn():
-    bus = _EventBus()
+def test_callback_listener_queues_events_before_start():
+    async def _inner():
+        bus = _EventBus()
+        received = []
+        listener = _CallbackListener(bus, "chat", lambda m: received.append(m))
+        msg = ChatMessage(player_id=1, text="early")
+        bus.broadcast(("chat", msg))
+        listener.start()
+        await asyncio.sleep(0)
+        assert received == [msg]
 
-    def fn(evt):
-        pass
-
-    bus.on_set_health(fn)
-    assert bus._cb_set_health is fn
-    bus.on_set_armour(fn)
-    assert bus._cb_set_armour is fn
-    bus.on_set_position(fn)
-    assert bus._cb_set_position is fn
-    bus.on_checkpoint(fn)
-    assert bus._cb_checkpoint is fn
-    bus.on_checkpoint_disabled(fn)
-    assert bus._cb_checkpoint_disabled is fn
+    asyncio.run(_inner())
 
 
-def test_simple_decorators_return_fn():
-    bus = _EventBus()
+def test_callback_listener_skips_other_tags():
+    async def _inner():
+        bus = _EventBus()
+        received = []
+        listener = _CallbackListener(bus, "chat", lambda m: received.append(m))
+        listener.start()
+        await asyncio.sleep(0)
+        bus.broadcast(("rpc", 1, b""))
+        bus.broadcast(("chat", ChatMessage(player_id=1, text="yes")))
+        await asyncio.sleep(0)
+        assert len(received) == 1
 
-    def fn():
-        pass
-
-    assert bus.on_connect(fn) is fn
-    assert bus.on_disconnect(fn) is fn
-    assert bus.on_set_health(fn) is fn
-    assert bus.on_player_death(fn) is fn
+    asyncio.run(_inner())
