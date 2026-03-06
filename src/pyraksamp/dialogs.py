@@ -30,7 +30,7 @@ __all__ = [
 # ── Buttons ────────────────────────────────────────────────────────────────────
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class Button:
     """A dialog button. SA:MP IDs: 1 = first/OK, 0 = second/Cancel."""
 
@@ -44,35 +44,27 @@ class Button:
 
 
 class ButtonSelector:
-    """Selector for dialog buttons. Positional: [0]=left/OK, [1]=right/Cancel.
-
-    Stored as a 2-element list:
-        _buttons[0] = left/first (always present)
-        _buttons[1] = right/second (None if no second button)
-    """
+    """Selector for dialog buttons. Positional: [0]=left/OK, [1]=right/Cancel."""
 
     __slots__ = ("_buttons",)
 
-    def __init__(self, buttons: list[Button | None]) -> None:
-        self._buttons = buttons  # [0]=left, [1]=right
+    def __init__(self, buttons: tuple[Button, ...]) -> None:
+        self._buttons = buttons
 
     def __getitem__(self, idx: int) -> Button:
-        btn = self._buttons[idx]
-        if btn is None:
-            raise KeyError(idx)
-        return btn
+        return self._buttons[idx]
 
     def __call__(self, pred: Callable[[Button], bool]) -> Button:
         for b in self._buttons:
-            if b is not None and pred(b):
+            if pred(b):
                 return b
         raise ValueError("no button matches predicate")
 
     def __iter__(self) -> Iterator[Button]:
-        return (b for b in self._buttons if b is not None)
+        return iter(self._buttons)
 
     def __len__(self) -> int:
-        return sum(1 for b in self._buttons if b is not None)
+        return len(self._buttons)
 
 
 def _make_buttons(
@@ -80,16 +72,16 @@ def _make_buttons(
 ) -> ButtonSelector:
     # [0]=left/OK (wire id=1), [1]=right/Cancel (wire id=0)
     left = Button(label=button1, id=1, _dialog_id=dialog_id, _bot=bot)
-    right = (
-        Button(label=button2, id=0, _dialog_id=dialog_id, _bot=bot) if button2 else None
-    )
-    return ButtonSelector([left, right])
+    if button2:
+        right = Button(label=button2, id=0, _dialog_id=dialog_id, _bot=bot)
+        return ButtonSelector((left, right))
+    return ButtonSelector((left,))
 
 
 # ── Rows ───────────────────────────────────────────────────────────────────────
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class ListRow:
     text: str
     index: int
@@ -100,9 +92,9 @@ class ListRow:
         self._bot.send_dialog_response(self._dialog_id, button=1, list_item=self.index)
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class TablistRow:
-    columns: list[str]
+    columns: tuple[str, ...]
     index: int
     _dialog_id: int = field(repr=False, compare=False)
     _bot: SAMPBot = field(repr=False, compare=False)
@@ -142,7 +134,7 @@ class RowSelector(Generic[_R]):
 # ── Dialog types ───────────────────────────────────────────────────────────────
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class MsgboxDialog:
     style: ClassVar[Literal[0]] = 0
     dialog_id: int
@@ -160,7 +152,7 @@ class MsgboxDialog:
         self._bot.send_dialog_response(self.dialog_id, button=0)
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class InputDialog:
     style: ClassVar[Literal[1]] = 1
     dialog_id: int
@@ -178,7 +170,7 @@ class InputDialog:
         self._bot.send_dialog_response(self.dialog_id, button=0)
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class PasswordDialog:
     style: ClassVar[Literal[3]] = 3
     dialog_id: int
@@ -196,7 +188,7 @@ class PasswordDialog:
         self._bot.send_dialog_response(self.dialog_id, button=0)
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class ListDialog:
     style: ClassVar[Literal[2]] = 2
     dialog_id: int
@@ -210,7 +202,7 @@ class ListDialog:
         self._bot.send_dialog_response(self.dialog_id, button=0)
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class TablistDialog:
     style: ClassVar[Literal[4]] = 4
     dialog_id: int
@@ -224,14 +216,14 @@ class TablistDialog:
         self._bot.send_dialog_response(self.dialog_id, button=0)
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class TablistHeadersDialog:
     style: ClassVar[Literal[5]] = 5
     dialog_id: int
     title: str
     button1: str
     button2: str
-    headers: list[str]
+    headers: tuple[str, ...]
     rows: RowSelector[TablistRow]
     _bot: SAMPBot = field(repr=False, compare=False)
 
@@ -305,7 +297,9 @@ def _make_dialog(
     if style == 4:
         rows_t: RowSelector[TablistRow] = RowSelector(
             [
-                TablistRow(columns=line.split("\t"), index=i, _dialog_id=did, _bot=bot)
+                TablistRow(
+                    columns=tuple(line.split("\t")), index=i, _dialog_id=did, _bot=bot
+                )
                 for i, line in enumerate(ln for ln in body.split("\n") if ln)
             ]
         )
@@ -319,10 +313,12 @@ def _make_dialog(
         )
     if style == 5:
         lines = [ln for ln in body.split("\n") if ln]
-        headers = lines[0].split("\t") if lines else []
+        headers = tuple(lines[0].split("\t")) if lines else ()
         rows_th: RowSelector[TablistRow] = RowSelector(
             [
-                TablistRow(columns=line.split("\t"), index=i, _dialog_id=did, _bot=bot)
+                TablistRow(
+                    columns=tuple(line.split("\t")), index=i, _dialog_id=did, _bot=bot
+                )
                 for i, line in enumerate(lines[1:])
             ]
         )

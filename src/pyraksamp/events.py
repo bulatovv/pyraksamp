@@ -37,7 +37,7 @@ __all__ = [
 ]
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class ChatMessage:
     """Public chat message sent by another player."""
 
@@ -45,7 +45,7 @@ class ChatMessage:
     text: str
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class ServerMessage:
     """Coloured server message (SendClientMessage)."""
 
@@ -53,7 +53,7 @@ class ServerMessage:
     text: str
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class GameText:
     """ShowGameText — appears on-screen in a GTA text style."""
 
@@ -62,7 +62,7 @@ class GameText:
     text: str
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class PlayerJoin:
     """Player connected to the server (RPC_SERVER_JOIN)."""
 
@@ -71,7 +71,7 @@ class PlayerJoin:
     is_npc: bool = False  # NOTE: is_npc not preserved by current server join handler
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class PlayerQuit:
     """Player disconnected from the server (RPC_SERVER_QUIT)."""
 
@@ -79,7 +79,7 @@ class PlayerQuit:
     reason: int  # 0=timeout 1=quit 2=kick
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class PlayerStreamIn:
     """Player streamed into proximity (RPC_WORLD_PLAYER_ADD)."""
 
@@ -94,28 +94,28 @@ class PlayerStreamIn:
     fight_style: int
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class PlayerStreamOut:
     """Player streamed out of proximity (RPC_WORLD_PLAYER_REMOVE)."""
 
     player_id: int
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class SetHealth:
     """Server set our health (SetPlayerHealth)."""
 
     health: float
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class SetArmour:
     """Server set our armour (SetPlayerArmour)."""
 
     armour: float
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class SetPosition:
     """Server teleported us (SetPlayerPos)."""
 
@@ -124,7 +124,7 @@ class SetPosition:
     z: float
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class Checkpoint:
     """Server created a checkpoint (SetPlayerCheckpoint)."""
 
@@ -134,7 +134,7 @@ class Checkpoint:
     size: float
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class PlayerNameChange:
     """Server changed a player's name (RPC_SET_PLAYER_NAME)."""
 
@@ -143,14 +143,14 @@ class PlayerNameChange:
     success: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class ToggleControllable:
     """Server toggled player controllable state."""
 
     moveable: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class PlayerTime:
     """Server set player time."""
 
@@ -158,7 +158,7 @@ class PlayerTime:
     minute: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class DeathMessage:
     """Server broadcast a death message."""
 
@@ -167,14 +167,14 @@ class DeathMessage:
     weapon: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class SetArmedWeapon:
     """Server set the player's armed weapon."""
 
     weapon_id: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class SpawnInfo:
     """Server sent spawn info (SetSpawnInfo)."""
 
@@ -188,7 +188,7 @@ class SpawnInfo:
     ammo: tuple
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class PlayerTeam:
     """Server set a player's team."""
 
@@ -196,7 +196,7 @@ class PlayerTeam:
     team: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class PutInVehicle:
     """Server put us in a vehicle."""
 
@@ -204,7 +204,7 @@ class PutInVehicle:
     seat_id: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class PlayerColor:
     """Server set a player's color."""
 
@@ -212,28 +212,28 @@ class PlayerColor:
     color: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class WorldTime:
     """Server set the world time."""
 
     hour: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class ToggleSpectating:
     """Server toggled spectating mode."""
 
     spectating: bool
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class WantedLevel:
     """Server set our wanted level."""
 
     level: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class WeaponAmmo:
     """Server set ammo for a weapon slot."""
 
@@ -241,21 +241,21 @@ class WeaponAmmo:
     ammo: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class Gravity:
     """Server set world gravity."""
 
     gravity: float
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class Weather:
     """Server set world weather."""
 
     weather_id: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class PlayerSkin:
     """Server set a player's skin."""
 
@@ -263,14 +263,14 @@ class PlayerSkin:
     skin_id: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class SetInterior:
     """Server set our interior."""
 
     interior_id: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class VehicleStreamIn:
     """Vehicle streamed into proximity (WorldVehicleAdd)."""
 
@@ -294,14 +294,14 @@ class VehicleStreamIn:
     body_color2: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class VehicleStreamOut:
     """Vehicle streamed out of proximity (WorldVehicleRemove)."""
 
     vehicle_id: int
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class PlayerDeath:
     """Server broadcast a player death (DeathBroadcast)."""
 
