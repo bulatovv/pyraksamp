@@ -31,7 +31,7 @@ import asyncio
 import random
 import struct
 from collections.abc import Callable
-from typing import Any, TypeVar, overload
+from typing import Any, overload
 
 from pyraksamp._core import SAMPClient as _SAMPClient
 from pyraksamp import _core
@@ -190,7 +190,6 @@ RPC_WORLD_VEHICLE_REMOVE = _core.RPC_WORLD_VEHICLE_REMOVE
 RPC_DEATH_BROADCAST = _core.RPC_DEATH_BROADCAST
 
 
-_F = TypeVar("_F", bound=Callable)
 
 
 def _make_obj_filter(predicate, kwargs):
@@ -792,23 +791,23 @@ class SAMPBot:
     # Each decorator accepts both plain functions and async def coroutines.
     # Typed callbacks receive the corresponding dataclass instance as first arg.
 
-    def on_connect(self, fn: _F) -> _F:
+    def on_connect[F: Callable](self, fn: F) -> F:
         """Decorator: called (no args) when fully connected."""
         self._cb_connect = fn
         return fn
 
-    def on_disconnect(self, fn: _F) -> _F:
+    def on_disconnect[F: Callable](self, fn: F) -> F:
         """Decorator: called (no args) on disconnection."""
         self._cb_disconnect = fn
         return fn
 
-    def on_rpc(
+    def on_rpc[F: Callable](
         self,
-        fn: _F | None = None,
+        fn: F | None = None,
         *,
         rpc_id: int | None = None,
         predicate: Callable[[int, bytes], bool] | None = None,
-    ) -> _F | Callable[[_F], _F]:
+    ) -> F | Callable[[F], F]:
         """Decorator: fn(rpc_id: int, data: bytes) for every incoming RPC (raw).
 
         Optional filters:
@@ -838,14 +837,14 @@ class SAMPBot:
             return decorator(fn)
         return decorator
 
-    def on_player_join(
+    def on_player_join[F: Callable](
         self,
-        fn: _F | None = None,
+        fn: F | None = None,
         *,
         player_id: int | None = None,
         name: str | None = None,
         predicate: Callable[[PlayerJoin], bool] | None = None,
-    ) -> _F | Callable[[_F], _F]:
+    ) -> F | Callable[[F], F]:
         """Decorator: fn(event: PlayerJoin) when a player connects.
 
         Optional filters: player_id=, name=, predicate=lambda e: ...
@@ -860,13 +859,13 @@ class SAMPBot:
             return decorator(fn)
         return decorator
 
-    def on_player_quit(
+    def on_player_quit[F: Callable](
         self,
-        fn: _F | None = None,
+        fn: F | None = None,
         *,
         player_id: int | None = None,
         predicate: Callable[[PlayerQuit], bool] | None = None,
-    ) -> _F | Callable[[_F], _F]:
+    ) -> F | Callable[[F], F]:
         """Decorator: fn(event: PlayerQuit) when a player disconnects.
 
         Optional filters: player_id=, predicate=lambda e: ...
@@ -881,13 +880,13 @@ class SAMPBot:
             return decorator(fn)
         return decorator
 
-    def on_chat(
+    def on_chat[F: Callable](
         self,
-        fn: _F | None = None,
+        fn: F | None = None,
         *,
         player_id: int | None = None,
         predicate: Callable[[ChatMessage], bool] | None = None,
-    ) -> _F | Callable[[_F], _F]:
+    ) -> F | Callable[[F], F]:
         """Decorator: fn(event: ChatMessage) for public chat.
 
         Optional filters: player_id=, predicate=lambda e: e.text.startswith("!")
@@ -902,13 +901,13 @@ class SAMPBot:
             return decorator(fn)
         return decorator
 
-    def on_client_message(
+    def on_client_message[F: Callable](
         self,
-        fn: _F | None = None,
+        fn: F | None = None,
         *,
         color: int | None = None,
         predicate: Callable[[ServerMessage], bool] | None = None,
-    ) -> _F | Callable[[_F], _F]:
+    ) -> F | Callable[[F], F]:
         """Decorator: fn(event: ServerMessage) for server messages.
 
         Optional filters: color=0xFF0000FF, predicate=lambda e: ...
@@ -970,13 +969,13 @@ class SAMPBot:
             return decorator(fn)
         return decorator
 
-    def on_game_text(
+    def on_game_text[F: Callable](
         self,
-        fn: _F | None = None,
+        fn: F | None = None,
         *,
         style: int | None = None,
         predicate: Callable[[GameText], bool] | None = None,
-    ) -> _F | Callable[[_F], _F]:
+    ) -> F | Callable[[F], F]:
         """Decorator: fn(event: GameText) for ShowGameText.
 
         Optional filters: style=, predicate=lambda e: ...
@@ -991,142 +990,142 @@ class SAMPBot:
             return decorator(fn)
         return decorator
 
-    def on_set_health(self, fn: _F) -> _F:
+    def on_set_health[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: SetHealth)."""
         self._cb_set_health = fn
         return fn
 
-    def on_set_armour(self, fn: _F) -> _F:
+    def on_set_armour[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: SetArmour)."""
         self._cb_set_armour = fn
         return fn
 
-    def on_set_position(self, fn: _F) -> _F:
+    def on_set_position[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: SetPosition)."""
         self._cb_set_position = fn
         return fn
 
-    def on_checkpoint(self, fn: _F) -> _F:
+    def on_checkpoint[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: Checkpoint)."""
         self._cb_checkpoint = fn
         return fn
 
-    def on_checkpoint_disabled(self, fn: _F) -> _F:
+    def on_checkpoint_disabled[F: Callable](self, fn: F) -> F:
         """Decorator: fn() when the checkpoint is disabled."""
         self._cb_checkpoint_disabled = fn
         return fn
 
-    def on_player_streamed_in(self, fn: _F) -> _F:
+    def on_player_streamed_in[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: PlayerStreamIn)."""
         self._cb_player_streamed_in = fn
         return fn
 
-    def on_player_streamed_out(self, fn: _F) -> _F:
+    def on_player_streamed_out[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: PlayerStreamOut)."""
         self._cb_player_streamed_out = fn
         return fn
 
-    def on_player_name(self, fn: _F) -> _F:
+    def on_player_name[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: PlayerNameChange)."""
         self._cb_player_name = fn
         return fn
 
-    def on_toggle_controllable(self, fn: _F) -> _F:
+    def on_toggle_controllable[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: ToggleControllable)."""
         self._cb_toggle_controllable = fn
         return fn
 
-    def on_player_time(self, fn: _F) -> _F:
+    def on_player_time[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: PlayerTime)."""
         self._cb_player_time = fn
         return fn
 
-    def on_death_message(self, fn: _F) -> _F:
+    def on_death_message[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: DeathMessage)."""
         self._cb_death_message = fn
         return fn
 
-    def on_set_armed_weapon(self, fn: _F) -> _F:
+    def on_set_armed_weapon[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: SetArmedWeapon)."""
         self._cb_set_armed_weapon = fn
         return fn
 
-    def on_spawn_info(self, fn: _F) -> _F:
+    def on_spawn_info[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: SpawnInfo)."""
         self._cb_spawn_info = fn
         return fn
 
-    def on_player_team(self, fn: _F) -> _F:
+    def on_player_team[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: PlayerTeam)."""
         self._cb_player_team = fn
         return fn
 
-    def on_put_in_vehicle(self, fn: _F) -> _F:
+    def on_put_in_vehicle[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: PutInVehicle)."""
         self._cb_put_in_vehicle = fn
         return fn
 
-    def on_remove_from_vehicle(self, fn: _F) -> _F:
+    def on_remove_from_vehicle[F: Callable](self, fn: F) -> F:
         """Decorator: fn() when removed from vehicle."""
         self._cb_remove_from_vehicle = fn
         return fn
 
-    def on_player_color(self, fn: _F) -> _F:
+    def on_player_color[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: PlayerColor)."""
         self._cb_player_color = fn
         return fn
 
-    def on_world_time(self, fn: _F) -> _F:
+    def on_world_time[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: WorldTime)."""
         self._cb_world_time = fn
         return fn
 
-    def on_toggle_spectating(self, fn: _F) -> _F:
+    def on_toggle_spectating[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: ToggleSpectating)."""
         self._cb_toggle_spectating = fn
         return fn
 
-    def on_wanted_level(self, fn: _F) -> _F:
+    def on_wanted_level[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: WantedLevel)."""
         self._cb_wanted_level = fn
         return fn
 
-    def on_weapon_ammo(self, fn: _F) -> _F:
+    def on_weapon_ammo[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: WeaponAmmo)."""
         self._cb_weapon_ammo = fn
         return fn
 
-    def on_gravity(self, fn: _F) -> _F:
+    def on_gravity[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: Gravity)."""
         self._cb_gravity = fn
         return fn
 
-    def on_weather(self, fn: _F) -> _F:
+    def on_weather[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: Weather)."""
         self._cb_weather = fn
         return fn
 
-    def on_player_skin(self, fn: _F) -> _F:
+    def on_player_skin[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: PlayerSkin)."""
         self._cb_player_skin = fn
         return fn
 
-    def on_set_interior(self, fn: _F) -> _F:
+    def on_set_interior[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: SetInterior)."""
         self._cb_set_interior = fn
         return fn
 
-    def on_vehicle_streamed_in(self, fn: _F) -> _F:
+    def on_vehicle_streamed_in[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: VehicleStreamIn)."""
         self._cb_vehicle_streamed_in = fn
         return fn
 
-    def on_vehicle_streamed_out(self, fn: _F) -> _F:
+    def on_vehicle_streamed_out[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: VehicleStreamOut)."""
         self._cb_vehicle_streamed_out = fn
         return fn
 
-    def on_player_death(self, fn: _F) -> _F:
+    def on_player_death[F: Callable](self, fn: F) -> F:
         """Decorator: fn(event: PlayerDeath)."""
         self._cb_player_death = fn
         return fn
