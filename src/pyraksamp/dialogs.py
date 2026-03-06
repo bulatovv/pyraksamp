@@ -116,6 +116,7 @@ class ListRow:
 @dataclass(slots=True, frozen=True)
 class TablistRow:
     """A single row in a tablist dialog, with tab-separated column values."""
+
     columns: tuple[str, ...]
     index: int
     _dialog_id: int = field(repr=False, compare=False)

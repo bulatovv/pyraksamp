@@ -273,7 +273,16 @@ class _EventBus:
     ) -> Callable[[AnyDialog], Any]: ...
 
     @overload
-    def on_dialog[D: (MsgboxDialog, InputDialog, PasswordDialog, ListDialog, TablistDialog, TablistHeadersDialog)](
+    def on_dialog[
+        D: (
+            MsgboxDialog,
+            InputDialog,
+            PasswordDialog,
+            ListDialog,
+            TablistDialog,
+            TablistHeadersDialog,
+        )
+    ](
         self,
         fn: None = ...,
         *,
@@ -282,7 +291,16 @@ class _EventBus:
         dialog_id: int | None = ...,
     ) -> Callable[[Callable[[D], Any]], Callable[[D], Any]]: ...
 
-    def on_dialog[D: (MsgboxDialog, InputDialog, PasswordDialog, ListDialog, TablistDialog, TablistHeadersDialog)](
+    def on_dialog[
+        D: (
+            MsgboxDialog,
+            InputDialog,
+            PasswordDialog,
+            ListDialog,
+            TablistDialog,
+            TablistHeadersDialog,
+        )
+    ](
         self,
         fn: Callable[[Any], Any] | None = None,
         *,
@@ -303,10 +321,16 @@ class _EventBus:
         """
 
         def decorator(f: Callable[[D], Any]) -> Callable[[D], Any]:
-            type_pred = (lambda obj: isinstance(obj, dialog_type)) if dialog_type is not None else None
+            type_pred = (
+                (lambda obj: isinstance(obj, dialog_type))
+                if dialog_type is not None
+                else None
+            )
             if type_pred is not None and predicate is not None:
                 _p = predicate
-                combined: Callable[[D], bool] | None = lambda obj: type_pred(obj) and _p(obj)
+
+                def combined(obj) -> bool:
+                    return type_pred(obj) and _p(obj)
             else:
                 combined = type_pred or predicate
             filt = _make_obj_filter(combined, {"dialog_id": dialog_id})

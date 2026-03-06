@@ -1,7 +1,6 @@
 """Internal filter helpers shared by _bus and _streams."""
 
 import inspect
-from collections.abc import Callable
 
 
 # Return a filter callable(obj)->bool, or None if no filtering is requested.

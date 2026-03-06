@@ -4,7 +4,7 @@ import asyncio
 
 from pyraksamp._bus import _EventBus
 from pyraksamp._streams import _EventStreams
-from pyraksamp.dialogs import _make_dialog, InputDialog, MsgboxDialog
+from pyraksamp.dialogs import _make_dialog, InputDialog
 from pyraksamp.events import ChatMessage, PlayerJoin, ServerMessage
 from unittest.mock import MagicMock
 
@@ -159,7 +159,6 @@ def test_chat_yields_chat_messages():
         await task
         assert results == [msg]
 
-
     asyncio.run(_inner())
 
 
@@ -282,8 +281,8 @@ def test_wait_for_rpc_predicate_skips_non_matching():
 
         async def producer():
             await asyncio.sleep(0)
-            bus.broadcast(("rpc", 20, b"\x00"))      # predicate fails
-            bus.broadcast(("rpc", 20, b"\xff\xff"))   # predicate passes
+            bus.broadcast(("rpc", 20, b"\x00"))  # predicate fails
+            bus.broadcast(("rpc", 20, b"\xff\xff"))  # predicate passes
 
         asyncio.create_task(producer())
         data = await streams.wait_for_rpc(20, predicate=lambda rid, d: len(d) == 2)
@@ -304,8 +303,8 @@ def test_wait_for_dialog_type_filter():
 
         async def producer():
             await asyncio.sleep(0)
-            bus.broadcast(("dialog", msgbox_dlg))   # skipped
-            bus.broadcast(("dialog", input_dlg))    # matched
+            bus.broadcast(("dialog", msgbox_dlg))  # skipped
+            bus.broadcast(("dialog", input_dlg))  # matched
 
         asyncio.create_task(producer())
         result = await streams.wait_for_dialog(dialog_type=InputDialog)
@@ -342,8 +341,12 @@ def test_wait_for_client_message_color_filter():
 
         async def producer():
             await asyncio.sleep(0)
-            bus.broadcast(("client_message", ServerMessage(color=0x00FF00FF, text="green")))
-            bus.broadcast(("client_message", ServerMessage(color=0xFF0000FF, text="red")))
+            bus.broadcast(
+                ("client_message", ServerMessage(color=0x00FF00FF, text="green"))
+            )
+            bus.broadcast(
+                ("client_message", ServerMessage(color=0xFF0000FF, text="red"))
+            )
 
         asyncio.create_task(producer())
         msg = await streams.wait_for_client_message(color=0xFF0000FF)

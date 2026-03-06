@@ -1,12 +1,16 @@
 """Isolated unit tests for _EventBus."""
 
 import asyncio
-import inspect
 from unittest.mock import MagicMock
 
 from pyraksamp._bus import _EventBus
-from pyraksamp.dialogs import _make_dialog, InputDialog, MsgboxDialog
-from pyraksamp.events import ChatMessage, PlayerJoin, PlayerQuit, ServerMessage, GameText
+from pyraksamp.dialogs import _make_dialog, InputDialog
+from pyraksamp.events import (
+    ChatMessage,
+    PlayerJoin,
+    ServerMessage,
+    GameText,
+)
 
 
 # ── subscribe / unsubscribe ───────────────────────────────────────────────────
@@ -80,7 +84,10 @@ def test_fire_async_callback():
 
 def test_on_connect_stores_and_returns_fn():
     bus = _EventBus()
-    fn = lambda: None
+
+    def fn():
+        pass
+
     result = bus.on_connect(fn)
     assert bus._cb_connect is fn
     assert result is fn
@@ -88,7 +95,10 @@ def test_on_connect_stores_and_returns_fn():
 
 def test_on_disconnect_stores_and_returns_fn():
     bus = _EventBus()
-    fn = lambda: None
+
+    def fn():
+        pass
+
     result = bus.on_disconnect(fn)
     assert bus._cb_disconnect is fn
     assert result is fn
@@ -99,7 +109,10 @@ def test_on_disconnect_stores_and_returns_fn():
 
 def test_on_rpc_no_filter_stores_fn_directly():
     bus = _EventBus()
-    fn = lambda rid, data: None
+
+    def fn(rid, data):
+        pass
+
     bus.on_rpc(fn)
     assert bus._cb_rpc is fn
 
@@ -126,8 +139,8 @@ def test_on_rpc_predicate_filter():
     bus.on_rpc(predicate=lambda rid, data: len(data) > 2)(
         lambda rid, data: received.append(data)
     )
-    asyncio.run(bus._cb_rpc(1, b"ab"))      # 2 bytes — blocked
-    asyncio.run(bus._cb_rpc(1, b"abc"))     # 3 bytes — passes
+    asyncio.run(bus._cb_rpc(1, b"ab"))  # 2 bytes — blocked
+    asyncio.run(bus._cb_rpc(1, b"abc"))  # 3 bytes — passes
     assert received == [b"abc"]
 
 
@@ -197,7 +210,10 @@ def test_on_client_message_color_filter():
 
 def test_on_dialog_no_filter_stores_fn_directly():
     bus = _EventBus()
-    fn = lambda dlg: None
+
+    def fn(dlg):
+        pass
+
     bus.on_dialog(fn)
     assert bus._cb_dialog is fn
 
@@ -240,8 +256,12 @@ def test_on_dialog_type_and_predicate():
         dialog_type=InputDialog,
         predicate=lambda d: "Login" in d.title,
     )(lambda dlg: received.append(dlg))
-    asyncio.run(bus._cb_dialog(_make_dialog(1, 1, "Login", "OK", "", "", bot)))   # passes
-    asyncio.run(bus._cb_dialog(_make_dialog(2, 1, "Register", "OK", "", "", bot)))  # blocked
+    asyncio.run(
+        bus._cb_dialog(_make_dialog(1, 1, "Login", "OK", "", "", bot))
+    )  # passes
+    asyncio.run(
+        bus._cb_dialog(_make_dialog(2, 1, "Register", "OK", "", "", bot))
+    )  # blocked
     assert len(received) == 1
 
 
@@ -262,7 +282,10 @@ def test_on_game_text_style_filter():
 
 def test_simple_decorators_store_fn():
     bus = _EventBus()
-    fn = lambda evt: None
+
+    def fn(evt):
+        pass
+
     bus.on_set_health(fn)
     assert bus._cb_set_health is fn
     bus.on_set_armour(fn)
@@ -277,7 +300,10 @@ def test_simple_decorators_store_fn():
 
 def test_simple_decorators_return_fn():
     bus = _EventBus()
-    fn = lambda: None
+
+    def fn():
+        pass
+
     assert bus.on_connect(fn) is fn
     assert bus.on_disconnect(fn) is fn
     assert bus.on_set_health(fn) is fn

@@ -51,7 +51,6 @@ from pyraksamp.dialogs import (
     ListRow,
     TablistRow,
     RowSelector,
-    _make_dialog,
 )
 from pyraksamp.events import (
     ChatMessage,
@@ -372,7 +371,9 @@ class SAMPBot:
         name: str | None = None,
         predicate: Callable[[PlayerJoin], bool] | None = None,
     ) -> F | Callable[[F], F]:
-        return self._bus.on_player_join(fn, player_id=player_id, name=name, predicate=predicate)
+        return self._bus.on_player_join(
+            fn, player_id=player_id, name=name, predicate=predicate
+        )
 
     def on_player_quit[F: Callable](
         self,
@@ -408,7 +409,16 @@ class SAMPBot:
     ) -> Callable[[AnyDialog], Any]: ...
 
     @overload
-    def on_dialog[D: (MsgboxDialog, InputDialog, PasswordDialog, ListDialog, TablistDialog, TablistHeadersDialog)](
+    def on_dialog[
+        D: (
+            MsgboxDialog,
+            InputDialog,
+            PasswordDialog,
+            ListDialog,
+            TablistDialog,
+            TablistHeadersDialog,
+        )
+    ](
         self,
         fn: None = ...,
         *,
@@ -417,7 +427,16 @@ class SAMPBot:
         dialog_id: int | None = ...,
     ) -> Callable[[Callable[[D], Any]], Callable[[D], Any]]: ...
 
-    def on_dialog[D: (MsgboxDialog, InputDialog, PasswordDialog, ListDialog, TablistDialog, TablistHeadersDialog)](
+    def on_dialog[
+        D: (
+            MsgboxDialog,
+            InputDialog,
+            PasswordDialog,
+            ListDialog,
+            TablistDialog,
+            TablistHeadersDialog,
+        )
+    ](
         self,
         fn: Callable[[Any], Any] | None = None,
         *,
@@ -425,7 +444,9 @@ class SAMPBot:
         predicate: Callable[[D], bool] | None = None,
         dialog_id: int | None = None,
     ) -> Callable[[Any], Any]:
-        return self._bus.on_dialog(fn, dialog_type=dialog_type, predicate=predicate, dialog_id=dialog_id)
+        return self._bus.on_dialog(
+            fn, dialog_type=dialog_type, predicate=predicate, dialog_id=dialog_id
+        )
 
     def on_game_text[F: Callable](
         self,
@@ -593,14 +614,25 @@ class SAMPBot:
     ) -> bytes:
         return await self._streams.wait_for_rpc(rpc_id, predicate=predicate)
 
-    async def wait_for_dialog[D: (MsgboxDialog, InputDialog, PasswordDialog, ListDialog, TablistDialog, TablistHeadersDialog)](
+    async def wait_for_dialog[
+        D: (
+            MsgboxDialog,
+            InputDialog,
+            PasswordDialog,
+            ListDialog,
+            TablistDialog,
+            TablistHeadersDialog,
+        )
+    ](
         self,
         predicate: Callable[[D], bool] | None = None,
         *,
         dialog_type: type[D] | None = None,
         dialog_id: int | None = None,
     ) -> D:
-        return await self._streams.wait_for_dialog(predicate, dialog_type=dialog_type, dialog_id=dialog_id)
+        return await self._streams.wait_for_dialog(
+            predicate, dialog_type=dialog_type, dialog_id=dialog_id
+        )
 
     async def wait_for_chat(
         self,
@@ -625,7 +657,9 @@ class SAMPBot:
         player_id: int | None = None,
         name: str | None = None,
     ) -> PlayerJoin:
-        return await self._streams.wait_for_player_join(predicate, player_id=player_id, name=name)
+        return await self._streams.wait_for_player_join(
+            predicate, player_id=player_id, name=name
+        )
 
     # ── Delegation: actions → _actions ────────────────────────────────────────
 

@@ -6,7 +6,6 @@ from collections.abc import Callable
 from pyraksamp._bus import _EventBus
 from pyraksamp._utils import _make_obj_filter
 from pyraksamp.dialogs import (
-    AnyDialog,
     MsgboxDialog,
     InputDialog,
     PasswordDialog,
@@ -234,7 +233,16 @@ class _EventStreams:
             if predicate is None or predicate(rpc_id, data):
                 return data
 
-    async def wait_for_dialog[D: (MsgboxDialog, InputDialog, PasswordDialog, ListDialog, TablistDialog, TablistHeadersDialog)](
+    async def wait_for_dialog[
+        D: (
+            MsgboxDialog,
+            InputDialog,
+            PasswordDialog,
+            ListDialog,
+            TablistDialog,
+            TablistHeadersDialog,
+        )
+    ](
         self,
         predicate: Callable[[D], bool] | None = None,
         *,
@@ -256,10 +264,16 @@ class _EventStreams:
         -------
             The matched dialog.
         """
-        type_pred = (lambda obj: isinstance(obj, dialog_type)) if dialog_type is not None else None
+        type_pred = (
+            (lambda obj: isinstance(obj, dialog_type))
+            if dialog_type is not None
+            else None
+        )
         if type_pred is not None and predicate is not None:
             _p = predicate
-            combined: Callable[[D], bool] | None = lambda obj: type_pred(obj) and _p(obj)
+
+            def combined(obj) -> bool:
+                return type_pred(obj) and _p(obj)
         else:
             combined = type_pred or predicate
         filt = _make_obj_filter(combined, {"dialog_id": dialog_id})

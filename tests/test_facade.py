@@ -1,7 +1,7 @@
 """Isolated unit tests for SAMPBot facade and gen_gpci."""
 
 import asyncio
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import patch
 
 from pyraksamp import SAMPBot, SAMPClient, gen_gpci
 from pyraksamp import _core
@@ -110,7 +110,10 @@ def test_stop_calls_client():
 def test_on_connect_delegates_to_bus():
     with patch("pyraksamp._SAMPClient"):
         bot = SAMPBot("host")
-        fn = lambda: None
+
+        def fn():
+            pass
+
         bot.on_connect(fn)
         assert bot._bus._cb_connect is fn
 
@@ -140,7 +143,9 @@ def test_send_dialog_response_delegates():
     with patch("pyraksamp._SAMPClient") as MockClient:
         bot = SAMPBot("host")
         bot.send_dialog_response(5, 1, 2, "text")
-        MockClient.return_value.send_dialog_response.assert_called_once_with(5, 1, 2, "text")
+        MockClient.return_value.send_dialog_response.assert_called_once_with(
+            5, 1, 2, "text"
+        )
 
 
 # ── Stream delegation → _streams ──────────────────────────────────────────────

@@ -7,28 +7,48 @@ from unittest.mock import MagicMock
 from pyraksamp._bus import _EventBus
 from pyraksamp._actions import _Actions
 from pyraksamp._bridge import _CallbackBridge
-from pyraksamp.events import PlayerJoin, ChatMessage, VehicleStreamIn
+from pyraksamp.events import PlayerJoin
 from pyraksamp.dialogs import InputDialog
 
 
 # All 37 callback attribute names that _CallbackBridge.setup() must assign.
 _ALL_CALLBACK_ATTRS = [
-    "on_connect", "on_disconnect", "on_rpc",
-    "on_player_join", "on_player_quit",
-    "on_chat", "on_client_message",
-    "on_dialog", "on_game_text",
-    "on_set_health", "on_set_armour", "on_set_position",
-    "on_checkpoint", "on_checkpoint_disabled",
-    "on_player_streamed_in", "on_player_streamed_out",
-    "on_player_name", "on_toggle_controllable",
-    "on_player_time", "on_death_message",
-    "on_set_armed_weapon", "on_spawn_info",
-    "on_player_team", "on_put_in_vehicle", "on_remove_from_vehicle",
-    "on_player_color", "on_world_time",
-    "on_toggle_spectating", "on_wanted_level", "on_weapon_ammo",
-    "on_gravity", "on_weather", "on_player_skin",
+    "on_connect",
+    "on_disconnect",
+    "on_rpc",
+    "on_player_join",
+    "on_player_quit",
+    "on_chat",
+    "on_client_message",
+    "on_dialog",
+    "on_game_text",
+    "on_set_health",
+    "on_set_armour",
+    "on_set_position",
+    "on_checkpoint",
+    "on_checkpoint_disabled",
+    "on_player_streamed_in",
+    "on_player_streamed_out",
+    "on_player_name",
+    "on_toggle_controllable",
+    "on_player_time",
+    "on_death_message",
+    "on_set_armed_weapon",
+    "on_spawn_info",
+    "on_player_team",
+    "on_put_in_vehicle",
+    "on_remove_from_vehicle",
+    "on_player_color",
+    "on_world_time",
+    "on_toggle_spectating",
+    "on_wanted_level",
+    "on_weapon_ammo",
+    "on_gravity",
+    "on_weather",
+    "on_player_skin",
     "on_set_interior",
-    "on_vehicle_streamed_in", "on_vehicle_streamed_out",
+    "on_vehicle_streamed_in",
+    "on_vehicle_streamed_out",
     "on_player_death",
 ]
 
@@ -167,11 +187,24 @@ def test_on_vehicle_streamed_in_siren_cast_to_bool():
         bus.subscribe(q)
 
         client.on_vehicle_streamed_in(
-            10, 411, 0.0, 0.0, 0.0, 0.0,
-            1, 2, 1000.0, 0,
-            0, 0, 0, 0,
-            1,   # add_siren as int
-            0, 0, 0,
+            10,
+            411,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1,
+            2,
+            1000.0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,  # add_siren as int
+            0,
+            0,
+            0,
         )
         loop_calls[0]()
 

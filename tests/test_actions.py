@@ -1,7 +1,7 @@
 """Isolated unit tests for _Actions."""
 
 import struct
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 from pyraksamp._actions import _Actions
 from pyraksamp import _core

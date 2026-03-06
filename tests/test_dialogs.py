@@ -237,7 +237,9 @@ def _msgbox_dlg():
 
 def _call(cb, dlg):
     """Call a callback that may be plain or async (no-filter vs filtered)."""
-    import asyncio, inspect
+    import asyncio
+    import inspect
+
     if inspect.iscoroutinefunction(cb):
         asyncio.run(cb(dlg))
     else:
@@ -288,7 +290,7 @@ def test_on_dialog_dialog_id_filter():
     bot = _mock_self()
     received = []
     SAMPBot.on_dialog(bot, dialog_id=1)(lambda dlg: received.append(dlg))
-    _run(bot._bus._cb_dialog(_input_dlg()))   # id=1 — should pass
+    _run(bot._bus._cb_dialog(_input_dlg()))  # id=1 — should pass
     _run(bot._bus._cb_dialog(_msgbox_dlg()))  # id=2 — should be blocked
     assert len(received) == 1
 
@@ -302,9 +304,9 @@ def test_on_dialog_predicate_filter():
         dialog_type=InputDialog,
         predicate=lambda d: "Login" in d.title,
     )(lambda dlg: received.append(dlg))
-    _run(bot._bus._cb_dialog(_input_dlg()))   # title="Login" — passes
+    _run(bot._bus._cb_dialog(_input_dlg()))  # title="Login" — passes
     other = _make_dialog(3, 1, "Register", "OK", "", "", MagicMock())
-    _run(bot._bus._cb_dialog(other))          # title="Register" — blocked by predicate
+    _run(bot._bus._cb_dialog(other))  # title="Register" — blocked by predicate
     assert len(received) == 1
 
 
