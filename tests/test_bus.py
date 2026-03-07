@@ -62,7 +62,7 @@ def test_stream_listener_yields_matching_tag():
 
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)
-        msg = ChatMessage(player_id=1, text="hi")
+        msg = ChatMessage(player_id=1, raw=b"hi", text="hi")
         bus.broadcast(("chat", msg))
         bus.broadcast(("disconnect",))
         await task
@@ -84,7 +84,7 @@ def test_stream_listener_skips_other_tags():
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)
         bus.broadcast(("rpc", 1, b""))
-        bus.broadcast(("chat", ChatMessage(player_id=1, text="yes")))
+        bus.broadcast(("chat", ChatMessage(player_id=1, raw=b"yes", text="yes")))
         bus.broadcast(("disconnect",))
         await task
         assert len(results) == 1
@@ -104,8 +104,8 @@ def test_stream_listener_predicate_filter():
 
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)
-        bus.broadcast(("chat", ChatMessage(player_id=1, text="no")))
-        bus.broadcast(("chat", ChatMessage(player_id=3, text="yes")))
+        bus.broadcast(("chat", ChatMessage(player_id=1, raw=b"no", text="no")))
+        bus.broadcast(("chat", ChatMessage(player_id=3, raw=b"yes", text="yes")))
         bus.broadcast(("disconnect",))
         await task
         assert len(results) == 1 and results[0].player_id == 3
@@ -169,7 +169,7 @@ def test_stream_listener_fan_out():
         ta = asyncio.create_task(consume(a))
         tb = asyncio.create_task(consume(b))
         await asyncio.sleep(0)
-        msg = ChatMessage(player_id=1, text="x")
+        msg = ChatMessage(player_id=1, raw=b"x", text="x")
         bus.broadcast(("chat", msg))
         bus.broadcast(("disconnect",))
         await ta
@@ -201,7 +201,7 @@ def test_callback_listener_invokes_sync_fn():
         listener = _CallbackListener(d, "chat", lambda msg: received.append(msg))
         listener.start()
         await asyncio.sleep(0)
-        msg = ChatMessage(player_id=1, text="hello")
+        msg = ChatMessage(player_id=1, raw=b"hello", text="hello")
         bus.broadcast(("chat", msg))
         await asyncio.sleep(0)  # dispatcher routes to listener queue
         await asyncio.sleep(0)  # listener processes
@@ -222,7 +222,7 @@ def test_callback_listener_invokes_async_fn():
         listener = _CallbackListener(d, "chat", cb)
         listener.start()
         await asyncio.sleep(0)
-        msg = ChatMessage(player_id=2, text="async")
+        msg = ChatMessage(player_id=2, raw=b"async", text="async")
         bus.broadcast(("chat", msg))
         await asyncio.sleep(0)  # dispatcher routes
         await asyncio.sleep(0)  # listener processes
@@ -302,7 +302,7 @@ def test_callback_listener_stops_on_disconnect():
         await asyncio.sleep(0)
         bus.broadcast(("disconnect",))
         await asyncio.sleep(0)
-        bus.broadcast(("chat", ChatMessage(player_id=1, text="late")))
+        bus.broadcast(("chat", ChatMessage(player_id=1, raw=b"late", text="late")))
         await asyncio.sleep(0)
         assert received == []
 
@@ -315,7 +315,7 @@ def test_callback_listener_queues_events_before_start():
         d = _make_dispatcher(bus)
         received = []
         listener = _CallbackListener(d, "chat", lambda m: received.append(m))
-        msg = ChatMessage(player_id=1, text="early")
+        msg = ChatMessage(player_id=1, raw=b"early", text="early")
         bus.broadcast(("chat", msg))
         listener.start()
         await asyncio.sleep(0)
@@ -333,7 +333,7 @@ def test_callback_listener_skips_other_tags():
         listener.start()
         await asyncio.sleep(0)
         bus.broadcast(("rpc", 1, b""))
-        bus.broadcast(("chat", ChatMessage(player_id=1, text="yes")))
+        bus.broadcast(("chat", ChatMessage(player_id=1, raw=b"yes", text="yes")))
         await asyncio.sleep(0)  # dispatcher routes
         await asyncio.sleep(0)  # listener processes
         assert len(received) == 1

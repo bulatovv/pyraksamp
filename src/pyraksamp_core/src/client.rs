@@ -109,9 +109,9 @@ pub struct Callbacks {
     pub on_rpc:                 Option<Arc<dyn Fn(u8, Vec<u8>) + Send + Sync>>,
     pub on_player_join:         Option<Arc<dyn Fn(u16, String) + Send + Sync>>,
     pub on_player_quit:         Option<Arc<dyn Fn(u16, u8) + Send + Sync>>,
-    pub on_chat:                Option<Arc<dyn Fn(u16, String) + Send + Sync>>,
-    pub on_client_message:      Option<Arc<dyn Fn(u32, String) + Send + Sync>>,
-    pub on_dialog:              Option<Arc<dyn Fn(u16, u8, String, String, String, String) + Send + Sync>>,
+    pub on_chat:                Option<Arc<dyn Fn(u16, Vec<u8>) + Send + Sync>>,
+    pub on_client_message:      Option<Arc<dyn Fn(u32, Vec<u8>) + Send + Sync>>,
+    pub on_dialog:              Option<Arc<dyn Fn(u16, u8, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) + Send + Sync>>,
     pub on_game_text:           Option<Arc<dyn Fn(i32, i32, String) + Send + Sync>>,
     pub on_set_health:          Option<Arc<dyn Fn(f32) + Send + Sync>>,
     pub on_set_armour:          Option<Arc<dyn Fn(f32) + Send + Sync>>,
@@ -530,8 +530,7 @@ impl SampClient {
                     let tlen = bs.read_uint8().ok()? as usize;
                     let mut tbuf = vec![0u8; tlen];
                     if tlen > 0 { bs.read_aligned_bytes(&mut tbuf).ok()?; }
-                    let text = String::from_utf8_lossy(&tbuf).into_owned();
-                    fire!(self.callbacks, on_chat, pid, text);
+                    fire!(self.callbacks, on_chat, pid, tbuf);
                 }
 
                 RPC_CLIENT_MESSAGE => {
@@ -540,8 +539,7 @@ impl SampClient {
                     if mlen > 256 { return None; }
                     let mut mbuf = vec![0u8; mlen];
                     if mlen > 0 { bs.read_aligned_bytes(&mut mbuf).ok()?; }
-                    let text = String::from_utf8_lossy(&mbuf).into_owned();
-                    fire!(self.callbacks, on_client_message, color, text);
+                    fire!(self.callbacks, on_client_message, color, mbuf);
                 }
 
                 RPC_DIALOG_BOX => {
@@ -551,20 +549,16 @@ impl SampClient {
                     let tlen = bs.read_uint8().ok()? as usize;
                     let mut tbuf = vec![0u8; tlen];
                     if tlen > 0 { bs.read_aligned_bytes(&mut tbuf).ok()?; }
-                    let title = String::from_utf8_lossy(&tbuf).into_owned();
-
                     let b1len = bs.read_uint8().ok()? as usize;
                     let mut b1buf = vec![0u8; b1len];
                     if b1len > 0 { bs.read_aligned_bytes(&mut b1buf).ok()?; }
-                    let btn1 = String::from_utf8_lossy(&b1buf).into_owned();
 
                     let b2len = bs.read_uint8().ok()? as usize;
                     let mut b2buf = vec![0u8; b2len];
                     if b2len > 0 { bs.read_aligned_bytes(&mut b2buf).ok()?; }
-                    let btn2 = String::from_utf8_lossy(&b2buf).into_owned();
 
-                    let body = bs.read_compressed_string(4095).ok().unwrap_or_default();
-                    fire!(self.callbacks, on_dialog, did, style, title, btn1, btn2, body);
+                    let body = bs.read_compressed_bytes(4095).ok().unwrap_or_default();
+                    fire!(self.callbacks, on_dialog, did, style, tbuf, b1buf, b2buf, body);
                 }
 
                 RPC_GAME_TEXT => {

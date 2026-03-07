@@ -318,10 +318,12 @@ class SAMPBot:
         nickname: str = "PyBot",
         password: str = "",
         gpci: str = "",
+        server_encoding: str = "utf-8",
     ):
         if not gpci:
             gpci = gen_gpci()
         self._client = _SAMPClient(host, port, nickname, password, gpci)
+        self._server_encoding = server_encoding
         self._bus = _EventBus()
         self._dispatcher = _Dispatcher(self._bus)
         self._actions = _Actions(self._client)
@@ -358,7 +360,9 @@ class SAMPBot:
             ``True`` if connected, ``False`` on timeout or rejection.
         """
         loop = asyncio.get_running_loop()
-        _setup_bridge(self._client, self._bus, self._make_dialog, loop)
+        _setup_bridge(
+            self._client, self._bus, self._make_dialog, loop, self._server_encoding
+        )
         self._dispatcher.start()
         # Feed textdraw events into the registry (must be registered before user listeners)
         for tag, fn in [

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use pyraksamp_core::client::SampClient;
 
 // ── PySAMPClient ──────────────────────────────────────────────────────────────
@@ -200,22 +201,34 @@ impl PySAMPClient {
     #[getter] fn get_on_chat(&self, py: Python) -> Option<Py<PyAny>> { cloned(py, &self.py_cbs.on_chat) }
     #[setter] fn set_on_chat(&mut self, py: Python, cb: Option<Py<PyAny>>) {
         self.py_cbs.on_chat = cb.as_ref().map(|c| c.clone_ref(py));
-        self.inner.callbacks.lock().unwrap().on_chat = cb.map(|c| wrap!(c, pid: u16, text: String));
+        self.inner.callbacks.lock().unwrap().on_chat = cb.map(|c| {
+            Arc::new(move |pid: u16, text: Vec<u8>| {
+                Python::with_gil(|py| { let _ = c.call1(py, (pid, PyBytes::new(py, &text))); });
+            }) as Arc<dyn Fn(u16, Vec<u8>) + Send + Sync>
+        });
     }
 
     #[getter] fn get_on_client_message(&self, py: Python) -> Option<Py<PyAny>> { cloned(py, &self.py_cbs.on_client_message) }
     #[setter] fn set_on_client_message(&mut self, py: Python, cb: Option<Py<PyAny>>) {
         self.py_cbs.on_client_message = cb.as_ref().map(|c| c.clone_ref(py));
-        self.inner.callbacks.lock().unwrap().on_client_message = cb.map(|c| wrap!(c, color: u32, text: String));
+        self.inner.callbacks.lock().unwrap().on_client_message = cb.map(|c| {
+            Arc::new(move |color: u32, text: Vec<u8>| {
+                Python::with_gil(|py| { let _ = c.call1(py, (color, PyBytes::new(py, &text))); });
+            }) as Arc<dyn Fn(u32, Vec<u8>) + Send + Sync>
+        });
     }
 
     #[getter] fn get_on_dialog(&self, py: Python) -> Option<Py<PyAny>> { cloned(py, &self.py_cbs.on_dialog) }
     #[setter] fn set_on_dialog(&mut self, py: Python, cb: Option<Py<PyAny>>) {
         self.py_cbs.on_dialog = cb.as_ref().map(|c| c.clone_ref(py));
         self.inner.callbacks.lock().unwrap().on_dialog = cb.map(|c| {
-            Arc::new(move |did: u16, style: u8, title: String, btn1: String, btn2: String, body: String| {
-                Python::with_gil(|py| { let _ = c.call1(py, (did, style, title, btn1, btn2, body)); });
-            }) as Arc<dyn Fn(u16, u8, String, String, String, String) + Send + Sync>
+            Arc::new(move |did: u16, style: u8, title: Vec<u8>, btn1: Vec<u8>, btn2: Vec<u8>, body: Vec<u8>| {
+                Python::with_gil(|py| {
+                    let _ = c.call1(py, (did, style,
+                        PyBytes::new(py, &title), PyBytes::new(py, &btn1),
+                        PyBytes::new(py, &btn2),  PyBytes::new(py, &body)));
+                });
+            }) as Arc<dyn Fn(u16, u8, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) + Send + Sync>
         });
     }
 

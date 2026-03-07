@@ -145,7 +145,7 @@ def test_chat_yields_chat_messages():
 
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)
-        msg = ChatMessage(player_id=3, text="hello")
+        msg = ChatMessage(player_id=3, raw=b"hello", text="hello")
         bus.broadcast(("chat", msg))
         bus.broadcast(("disconnect",))
         await task
@@ -167,7 +167,7 @@ def test_typed_stream_skips_other_tags():
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)
         bus.broadcast(("rpc", 1, b""))
-        bus.broadcast(("chat", ChatMessage(player_id=1, text="hi")))
+        bus.broadcast(("chat", ChatMessage(player_id=1, raw=b"hi", text="hi")))
         bus.broadcast(("disconnect",))
         await task
         assert len(results) == 1
@@ -188,7 +188,7 @@ def test_fan_out_two_consumers_both_receive():
         ta = asyncio.create_task(consume(a))
         tb = asyncio.create_task(consume(b))
         await asyncio.sleep(0)
-        msg = ChatMessage(player_id=1, text="x")
+        msg = ChatMessage(player_id=1, raw=b"x", text="x")
         bus.broadcast(("chat", msg))
         bus.broadcast(("disconnect",))
         await ta
@@ -271,8 +271,10 @@ def test_wait_for_chat_player_id_filter():
 
         async def producer():
             await asyncio.sleep(0)
-            bot._bus.broadcast(("chat", ChatMessage(player_id=9, text="no")))
-            bot._bus.broadcast(("chat", ChatMessage(player_id=3, text="yes")))
+            bot._bus.broadcast(("chat", ChatMessage(player_id=9, raw=b"no", text="no")))
+            bot._bus.broadcast(
+                ("chat", ChatMessage(player_id=3, raw=b"yes", text="yes"))
+            )
 
         asyncio.create_task(producer())
         msg = await bot.wait_for_chat(player_id=3)
@@ -292,10 +294,16 @@ def test_wait_for_client_message_color_filter():
         async def producer():
             await asyncio.sleep(0)
             bot._bus.broadcast(
-                ("client_message", ServerMessage(color=0x00FF00FF, text="green"))
+                (
+                    "client_message",
+                    ServerMessage(color=0x00FF00FF, raw=b"green", text="green"),
+                )
             )
             bot._bus.broadcast(
-                ("client_message", ServerMessage(color=0xFF0000FF, text="red"))
+                (
+                    "client_message",
+                    ServerMessage(color=0xFF0000FF, raw=b"red", text="red"),
+                )
             )
 
         asyncio.create_task(producer())

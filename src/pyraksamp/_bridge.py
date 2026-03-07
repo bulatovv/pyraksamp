@@ -39,7 +39,11 @@ from pyraksamp.events import (
 
 
 def _setup_bridge(
-    client, bus, make_dialog: Callable, loop: asyncio.AbstractEventLoop
+    client,
+    bus,
+    make_dialog: Callable,
+    loop: asyncio.AbstractEventLoop,
+    encoding: str = "utf-8",
 ) -> None:
     """Wire all _SAMPClient Rust callbacks to the asyncio event loop via _EventBus.
 
@@ -65,16 +69,31 @@ def _setup_bridge(
         evt = PlayerQuit(player_id=pid, reason=reason)
         loop.call_soon_threadsafe(lambda: bus.broadcast(("player_quit", evt)))
 
-    def on_chat(pid: int, text: str):
-        evt = ChatMessage(player_id=pid, text=text)
+    def on_chat(pid: int, raw: bytes):
+        evt = ChatMessage(
+            player_id=pid, raw=raw, text=raw.decode(encoding, errors="replace")
+        )
         loop.call_soon_threadsafe(lambda: bus.broadcast(("chat", evt)))
 
-    def on_client_message(color: int, text: str):
-        evt = ServerMessage(color=color, text=text)
+    def on_client_message(color: int, raw: bytes):
+        evt = ServerMessage(
+            color=color, raw=raw, text=raw.decode(encoding, errors="replace")
+        )
         loop.call_soon_threadsafe(lambda: bus.broadcast(("client_message", evt)))
 
-    def on_dialog(did: int, style: int, title: str, btn1: str, btn2: str, body: str):
-        evt = make_dialog(did, style, title, btn1, btn2, body)
+    def on_dialog(
+        did: int,
+        style: int,
+        raw_title: bytes,
+        raw_btn1: bytes,
+        raw_btn2: bytes,
+        raw_body: bytes,
+    ):
+        def dec(b):
+            return b.decode(encoding, errors="replace")
+        evt = make_dialog(
+            did, style, dec(raw_title), dec(raw_btn1), dec(raw_btn2), dec(raw_body)
+        )
         loop.call_soon_threadsafe(lambda: bus.broadcast(("dialog", evt)))
 
     def on_game_text(style: int, ms: int, text: str):

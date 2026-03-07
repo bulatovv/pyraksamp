@@ -413,10 +413,10 @@ impl BitStream {
         self.rpos += count;
     }
 
-    pub fn read_compressed_string(&mut self, max_chars: i32) -> Result<String, &'static str> {
+    pub fn read_compressed_bytes(&mut self, max_chars: i32) -> Result<Vec<u8>, &'static str> {
         let bit_len = self.read_compressed_uint16()? as i32;
         if bit_len == 0 {
-            return Ok(String::new());
+            return Ok(Vec::new());
         }
         if self.bits_remaining() < bit_len {
             return Err("BitStream underflow in read_compressed_string");
@@ -445,7 +445,12 @@ impl BitStream {
             }
         }
 
-        Ok(String::from_utf8_lossy(&result).into_owned())
+        Ok(result)
+    }
+
+    pub fn read_compressed_string(&mut self, max_chars: i32) -> Result<String, &'static str> {
+        self.read_compressed_bytes(max_chars)
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
     }
 
     // ── Accessors ──────────────────────────────────────────────────────────────

@@ -136,7 +136,7 @@ def test_on_dialog_uses_make_dialog_factory():
         q = asyncio.Queue()
         bus.subscribe(q)
 
-        client.on_dialog(1, 1, "Login", "OK", "Cancel", "Enter name:")
+        client.on_dialog(1, 1, b"Login", b"OK", b"Cancel", b"Enter name:")
         loop_calls[0]()
 
         tag, dlg = q.get_nowait()

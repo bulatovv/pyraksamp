@@ -258,7 +258,7 @@ def test_chat_stream_yields_chat_events():
             await bot.start()
             from pyraksamp.events import ChatMessage
 
-            msg = ChatMessage(player_id=1, text="hello")
+            msg = ChatMessage(player_id=1, raw=b"hello", text="hello")
             results = []
 
             async def consume():

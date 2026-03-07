@@ -42,6 +42,7 @@ class ChatMessage:
     """Public chat message sent by another player."""
 
     player_id: int
+    raw: bytes
     text: str
 
 
@@ -50,6 +51,7 @@ class ServerMessage:
     """Coloured server message (SendClientMessage)."""
 
     color: int  # 0xRRGGBBAA
+    raw: bytes
     text: str
 
 
