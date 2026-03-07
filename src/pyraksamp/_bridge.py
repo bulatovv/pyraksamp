@@ -38,7 +38,9 @@ from pyraksamp.events import (
 )
 
 
-def _setup_bridge(client, bus, make_dialog: Callable, loop: asyncio.AbstractEventLoop) -> None:
+def _setup_bridge(
+    client, bus, make_dialog: Callable, loop: asyncio.AbstractEventLoop
+) -> None:
     """Wire all _SAMPClient Rust callbacks to the asyncio event loop via _EventBus.
 
     The Rust run() thread invokes these callbacks with the GIL held; we must
@@ -99,14 +101,26 @@ def _setup_bridge(client, bus, make_dialog: Callable, loop: asyncio.AbstractEven
         loop.call_soon_threadsafe(lambda: bus.broadcast(("checkpoint_disabled",)))
 
     def on_player_streamed_in(
-        pid: int, team: int, skin: int,
-        x: float, y: float, z: float, rot: float,
-        color: int, fs: int,
+        pid: int,
+        team: int,
+        skin: int,
+        x: float,
+        y: float,
+        z: float,
+        rot: float,
+        color: int,
+        fs: int,
     ):
         evt = PlayerStreamIn(
-            player_id=pid, team=team, skin=skin,
-            x=x, y=y, z=z, rotation=rot,
-            color=color, fight_style=fs,
+            player_id=pid,
+            team=team,
+            skin=skin,
+            x=x,
+            y=y,
+            z=z,
+            rotation=rot,
+            color=color,
+            fight_style=fs,
         )
         loop.call_soon_threadsafe(lambda: bus.broadcast(("player_streamed_in", evt)))
 
@@ -135,14 +149,28 @@ def _setup_bridge(client, bus, make_dialog: Callable, loop: asyncio.AbstractEven
         loop.call_soon_threadsafe(lambda: bus.broadcast(("set_armed_weapon", evt)))
 
     def on_spawn_info(
-        team: int, skin: int,
-        x: float, y: float, z: float, rot: float,
-        w1: int, w2: int, w3: int,
-        a1: int, a2: int, a3: int,
+        team: int,
+        skin: int,
+        x: float,
+        y: float,
+        z: float,
+        rot: float,
+        w1: int,
+        w2: int,
+        w3: int,
+        a1: int,
+        a2: int,
+        a3: int,
     ):
         evt = SpawnInfo(
-            team=team, skin=skin, x=x, y=y, z=z, rotation=rot,
-            weapons=(w1, w2, w3), ammo=(a1, a2, a3),
+            team=team,
+            skin=skin,
+            x=x,
+            y=y,
+            z=z,
+            rotation=rot,
+            weapons=(w1, w2, w3),
+            ammo=(a1, a2, a3),
         )
         loop.call_soon_threadsafe(lambda: bus.broadcast(("spawn_info", evt)))
 
@@ -194,19 +222,44 @@ def _setup_bridge(client, bus, make_dialog: Callable, loop: asyncio.AbstractEven
         loop.call_soon_threadsafe(lambda: bus.broadcast(("set_interior", evt)))
 
     def on_vehicle_streamed_in(
-        vid: int, model: int,
-        x: float, y: float, z: float, angle: float,
-        color1: int, color2: int, health: float, interior: int,
-        door_dmg: int, panel_dmg: int, light_dmg: int, tire_dmg: int,
-        add_siren: int, paintjob: int, body_color1: int, body_color2: int,
+        vid: int,
+        model: int,
+        x: float,
+        y: float,
+        z: float,
+        angle: float,
+        color1: int,
+        color2: int,
+        health: float,
+        interior: int,
+        door_dmg: int,
+        panel_dmg: int,
+        light_dmg: int,
+        tire_dmg: int,
+        add_siren: int,
+        paintjob: int,
+        body_color1: int,
+        body_color2: int,
     ):
         evt = VehicleStreamIn(
-            vehicle_id=vid, model=model, x=x, y=y, z=z, angle=angle,
-            color1=color1, color2=color2, health=health, interior=interior,
-            door_damage=door_dmg, panel_damage=panel_dmg,
-            light_damage=light_dmg, tire_damage=tire_dmg,
-            add_siren=bool(add_siren), paintjob=paintjob,
-            body_color1=body_color1, body_color2=body_color2,
+            vehicle_id=vid,
+            model=model,
+            x=x,
+            y=y,
+            z=z,
+            angle=angle,
+            color1=color1,
+            color2=color2,
+            health=health,
+            interior=interior,
+            door_damage=door_dmg,
+            panel_damage=panel_dmg,
+            light_damage=light_dmg,
+            tire_damage=tire_dmg,
+            add_siren=bool(add_siren),
+            paintjob=paintjob,
+            body_color1=body_color1,
+            body_color2=body_color2,
         )
         loop.call_soon_threadsafe(lambda: bus.broadcast(("vehicle_streamed_in", evt)))
 

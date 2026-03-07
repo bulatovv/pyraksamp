@@ -107,7 +107,8 @@ def test_on_connect_fires_on_connect_event():
             bot.on_connect(lambda: called.append(True))
             await bot.start()
             bot._bus.broadcast(("connect",))
-            await asyncio.sleep(0)
+            await asyncio.sleep(0)  # dispatcher routes
+            await asyncio.sleep(0)  # listener processes
             assert called == [True]
 
     asyncio.run(_inner())
@@ -148,7 +149,8 @@ def test_multiple_on_connect_handlers_all_fire():
             bot.on_connect(lambda: calls.append(2))
             await bot.start()
             bot._bus.broadcast(("connect",))
-            await asyncio.sleep(0)
+            await asyncio.sleep(0)  # dispatcher routes
+            await asyncio.sleep(0)  # listener processes
             assert sorted(calls) == [1, 2]
 
     asyncio.run(_inner())
@@ -164,7 +166,8 @@ def test_on_dialog_fires_on_dialog_event():
             await bot.start()
             dlg = _make_dialog(1, 1, "Login", "Submit", "Cancel", "Enter:", MagicMock())
             bot._bus.broadcast(("dialog", dlg))
-            await asyncio.sleep(0)
+            await asyncio.sleep(0)  # dispatcher routes
+            await asyncio.sleep(0)  # listener processes
             assert len(received) == 1
             assert isinstance(received[0], InputDialog)
 
@@ -197,7 +200,8 @@ def test_start_enables_callbacks():
             bot.on_disconnect(lambda: called.append(False))
             await bot.start()
             bot._bus.broadcast(("connect",))
-            await asyncio.sleep(0)
+            await asyncio.sleep(0)  # dispatcher routes
+            await asyncio.sleep(0)  # listener processes
             assert True in called
 
     asyncio.run(_inner())
@@ -212,7 +216,8 @@ def test_register_listener_after_start_fires_immediately():
             called = []
             bot.on_connect(lambda: called.append(True))
             bot._bus.broadcast(("connect",))
-            await asyncio.sleep(0)
+            await asyncio.sleep(0)  # dispatcher routes
+            await asyncio.sleep(0)  # listener processes
             assert called == [True]
 
     asyncio.run(_inner())
@@ -228,6 +233,7 @@ def test_chat_stream_yields_chat_events():
             bot = SAMPBot("host")
             await bot.start()
             from pyraksamp.events import ChatMessage
+
             msg = ChatMessage(player_id=1, text="hello")
             results = []
 

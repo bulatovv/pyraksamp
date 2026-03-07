@@ -36,6 +36,7 @@ from pyraksamp._core import SAMPClient as _SAMPClient
 from pyraksamp import _core
 from pyraksamp._bus import _EventBus
 from pyraksamp._bridge import _setup_bridge
+from pyraksamp._dispatcher import _Dispatcher
 from pyraksamp._listener import _StreamListener, _CallbackListener
 from pyraksamp._actions import _Actions
 from pyraksamp._utils import _make_obj_filter
@@ -310,6 +311,7 @@ class SAMPBot:
             gpci = gen_gpci()
         self._client = _SAMPClient(host, port, nickname, password, gpci)
         self._bus = _EventBus()
+        self._dispatcher = _Dispatcher(self._bus)
         self._actions = _Actions(self._client)
         self._make_dialog = lambda did, style, title, btn1, btn2, body: _make_dialog(
             did, style, title, btn1, btn2, body, self._actions
@@ -338,6 +340,7 @@ class SAMPBot:
         """
         loop = asyncio.get_running_loop()
         _setup_bridge(self._client, self._bus, self._make_dialog, loop)
+        self._dispatcher.start()
         self._started = True
         for listener in self._listeners:
             listener.start()
@@ -368,14 +371,14 @@ class SAMPBot:
     def on_connect[F: Callable](self, fn: F) -> F:
         """Register a callback invoked when the client connects."""
         self._register_listener(
-            _CallbackListener(self._bus, "connect", fn, extract=_NO_ARG)
+            _CallbackListener(self._dispatcher, "connect", fn, extract=_NO_ARG)
         )
         return fn
 
     def on_disconnect[F: Callable](self, fn: F) -> F:
         """Register a callback invoked when the client disconnects."""
         self._register_listener(
-            _CallbackListener(self._bus, "disconnect", fn, extract=_NO_ARG)
+            _CallbackListener(self._dispatcher, "disconnect", fn, extract=_NO_ARG)
         )
         return fn
 
@@ -409,7 +412,9 @@ class SAMPBot:
                     self._bus,
                     "rpc",
                     f,
-                    predicate=filt if (rpc_id is not None or predicate is not None) else None,
+                    predicate=filt
+                    if (rpc_id is not None or predicate is not None)
+                    else None,
                     extract=lambda e: (e[1], e[2]),
                 )
             )
@@ -429,7 +434,9 @@ class SAMPBot:
 
         def decorator(f: F) -> F:
             filt = _make_obj_filter(predicate, {"player_id": player_id, "name": name})
-            self._register_listener(_CallbackListener(self._bus, "player_join", f, filt))
+            self._register_listener(
+                _CallbackListener(self._dispatcher, "player_join", f, filt)
+            )
             return f
 
         return decorator(fn) if fn is not None else decorator
@@ -445,7 +452,9 @@ class SAMPBot:
 
         def decorator(f: F) -> F:
             filt = _make_obj_filter(predicate, {"player_id": player_id})
-            self._register_listener(_CallbackListener(self._bus, "player_quit", f, filt))
+            self._register_listener(
+                _CallbackListener(self._dispatcher, "player_quit", f, filt)
+            )
             return f
 
         return decorator(fn) if fn is not None else decorator
@@ -461,7 +470,9 @@ class SAMPBot:
 
         def decorator(f: F) -> F:
             filt = _make_obj_filter(predicate, {"player_id": player_id})
-            self._register_listener(_CallbackListener(self._bus, "chat", f, filt))
+            self._register_listener(
+                _CallbackListener(self._dispatcher, "chat", f, filt)
+            )
             return f
 
         return decorator(fn) if fn is not None else decorator
@@ -478,7 +489,7 @@ class SAMPBot:
         def decorator(f: F) -> F:
             filt = _make_obj_filter(predicate, {"color": color})
             self._register_listener(
-                _CallbackListener(self._bus, "client_message", f, filt)
+                _CallbackListener(self._dispatcher, "client_message", f, filt)
             )
             return f
 
@@ -532,7 +543,9 @@ class SAMPBot:
             filt = _make_obj_filter(
                 predicate, {"dialog_id": dialog_id}, instance_of=dialog_type
             )
-            self._register_listener(_CallbackListener(self._bus, "dialog", f, filt))
+            self._register_listener(
+                _CallbackListener(self._dispatcher, "dialog", f, filt)
+            )
             return f
 
         if fn is not None:
@@ -550,137 +563,149 @@ class SAMPBot:
 
         def decorator(f: F) -> F:
             filt = _make_obj_filter(predicate, {"style": style})
-            self._register_listener(_CallbackListener(self._bus, "game_text", f, filt))
+            self._register_listener(
+                _CallbackListener(self._dispatcher, "game_text", f, filt)
+            )
             return f
 
         return decorator(fn) if fn is not None else decorator
 
     def on_set_health[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "set_health", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "set_health", fn))
         return fn
 
     def on_set_armour[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "set_armour", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "set_armour", fn))
         return fn
 
     def on_set_position[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "set_position", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "set_position", fn))
         return fn
 
     def on_checkpoint[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "checkpoint", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "checkpoint", fn))
         return fn
 
     def on_checkpoint_disabled[F: Callable](self, fn: F) -> F:
         self._register_listener(
-            _CallbackListener(self._bus, "checkpoint_disabled", fn, extract=_NO_ARG)
+            _CallbackListener(
+                self._dispatcher, "checkpoint_disabled", fn, extract=_NO_ARG
+            )
         )
         return fn
 
     def on_player_streamed_in[F: Callable](self, fn: F) -> F:
         self._register_listener(
-            _CallbackListener(self._bus, "player_streamed_in", fn)
+            _CallbackListener(self._dispatcher, "player_streamed_in", fn)
         )
         return fn
 
     def on_player_streamed_out[F: Callable](self, fn: F) -> F:
         self._register_listener(
-            _CallbackListener(self._bus, "player_streamed_out", fn)
+            _CallbackListener(self._dispatcher, "player_streamed_out", fn)
         )
         return fn
 
     def on_player_name[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "player_name", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "player_name", fn))
         return fn
 
     def on_toggle_controllable[F: Callable](self, fn: F) -> F:
         self._register_listener(
-            _CallbackListener(self._bus, "toggle_controllable", fn)
+            _CallbackListener(self._dispatcher, "toggle_controllable", fn)
         )
         return fn
 
     def on_player_time[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "player_time", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "player_time", fn))
         return fn
 
     def on_death_message[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "death_message", fn))
+        self._register_listener(
+            _CallbackListener(self._dispatcher, "death_message", fn)
+        )
         return fn
 
     def on_set_armed_weapon[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "set_armed_weapon", fn))
+        self._register_listener(
+            _CallbackListener(self._dispatcher, "set_armed_weapon", fn)
+        )
         return fn
 
     def on_spawn_info[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "spawn_info", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "spawn_info", fn))
         return fn
 
     def on_player_team[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "player_team", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "player_team", fn))
         return fn
 
     def on_put_in_vehicle[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "put_in_vehicle", fn))
+        self._register_listener(
+            _CallbackListener(self._dispatcher, "put_in_vehicle", fn)
+        )
         return fn
 
     def on_remove_from_vehicle[F: Callable](self, fn: F) -> F:
         self._register_listener(
-            _CallbackListener(self._bus, "remove_from_vehicle", fn, extract=_NO_ARG)
+            _CallbackListener(
+                self._dispatcher, "remove_from_vehicle", fn, extract=_NO_ARG
+            )
         )
         return fn
 
     def on_player_color[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "player_color", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "player_color", fn))
         return fn
 
     def on_world_time[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "world_time", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "world_time", fn))
         return fn
 
     def on_toggle_spectating[F: Callable](self, fn: F) -> F:
         self._register_listener(
-            _CallbackListener(self._bus, "toggle_spectating", fn)
+            _CallbackListener(self._dispatcher, "toggle_spectating", fn)
         )
         return fn
 
     def on_wanted_level[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "wanted_level", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "wanted_level", fn))
         return fn
 
     def on_weapon_ammo[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "weapon_ammo", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "weapon_ammo", fn))
         return fn
 
     def on_gravity[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "gravity", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "gravity", fn))
         return fn
 
     def on_weather[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "weather", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "weather", fn))
         return fn
 
     def on_player_skin[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "player_skin", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "player_skin", fn))
         return fn
 
     def on_set_interior[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "set_interior", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "set_interior", fn))
         return fn
 
     def on_vehicle_streamed_in[F: Callable](self, fn: F) -> F:
         self._register_listener(
-            _CallbackListener(self._bus, "vehicle_streamed_in", fn)
+            _CallbackListener(self._dispatcher, "vehicle_streamed_in", fn)
         )
         return fn
 
     def on_vehicle_streamed_out[F: Callable](self, fn: F) -> F:
         self._register_listener(
-            _CallbackListener(self._bus, "vehicle_streamed_out", fn)
+            _CallbackListener(self._dispatcher, "vehicle_streamed_out", fn)
         )
         return fn
 
     def on_player_death[F: Callable](self, fn: F) -> F:
-        self._register_listener(_CallbackListener(self._bus, "player_death", fn))
+        self._register_listener(_CallbackListener(self._dispatcher, "player_death", fn))
         return fn
 
     # ── Async generators ───────────────────────────────────────────────────────
@@ -716,83 +741,83 @@ class SAMPBot:
 
     def chat(self) -> _StreamListener:
         """Async generator yielding ChatMessage for each public chat message."""
-        return _StreamListener(self._bus, "chat")
+        return _StreamListener(self._dispatcher, "chat")
 
     def server_messages(self) -> _StreamListener:
         """Async generator yielding ServerMessage for each client message."""
-        return _StreamListener(self._bus, "client_message")
+        return _StreamListener(self._dispatcher, "client_message")
 
     def dialogs(self) -> _StreamListener:
         """Async generator yielding AnyDialog each time a dialog is shown."""
-        return _StreamListener(self._bus, "dialog")
+        return _StreamListener(self._dispatcher, "dialog")
 
     def game_texts(self) -> _StreamListener:
         """Async generator yielding GameText for each ShowGameText."""
-        return _StreamListener(self._bus, "game_text")
+        return _StreamListener(self._dispatcher, "game_text")
 
     def player_joins(self) -> _StreamListener:
         """Async generator yielding PlayerJoin for each connecting player."""
-        return _StreamListener(self._bus, "player_join")
+        return _StreamListener(self._dispatcher, "player_join")
 
     def player_quits(self) -> _StreamListener:
         """Async generator yielding PlayerQuit for each disconnecting player."""
-        return _StreamListener(self._bus, "player_quit")
+        return _StreamListener(self._dispatcher, "player_quit")
 
     def player_stream_ins(self) -> _StreamListener:
         """Async generator yielding PlayerStreamIn."""
-        return _StreamListener(self._bus, "player_streamed_in")
+        return _StreamListener(self._dispatcher, "player_streamed_in")
 
     def player_stream_outs(self) -> _StreamListener:
         """Async generator yielding PlayerStreamOut."""
-        return _StreamListener(self._bus, "player_streamed_out")
+        return _StreamListener(self._dispatcher, "player_streamed_out")
 
     def player_name_changes(self) -> _StreamListener:
         """Async generator yielding PlayerNameChange."""
-        return _StreamListener(self._bus, "player_name")
+        return _StreamListener(self._dispatcher, "player_name")
 
     def death_messages(self) -> _StreamListener:
         """Async generator yielding DeathMessage."""
-        return _StreamListener(self._bus, "death_message")
+        return _StreamListener(self._dispatcher, "death_message")
 
     def spawn_infos(self) -> _StreamListener:
         """Async generator yielding SpawnInfo."""
-        return _StreamListener(self._bus, "spawn_info")
+        return _StreamListener(self._dispatcher, "spawn_info")
 
     def put_in_vehicles(self) -> _StreamListener:
         """Async generator yielding PutInVehicle."""
-        return _StreamListener(self._bus, "put_in_vehicle")
+        return _StreamListener(self._dispatcher, "put_in_vehicle")
 
     def player_colors(self) -> _StreamListener:
         """Async generator yielding PlayerColor."""
-        return _StreamListener(self._bus, "player_color")
+        return _StreamListener(self._dispatcher, "player_color")
 
     def weather_changes(self) -> _StreamListener:
         """Async generator yielding Weather."""
-        return _StreamListener(self._bus, "weather")
+        return _StreamListener(self._dispatcher, "weather")
 
     def gravity_changes(self) -> _StreamListener:
         """Async generator yielding Gravity."""
-        return _StreamListener(self._bus, "gravity")
+        return _StreamListener(self._dispatcher, "gravity")
 
     def player_skins(self) -> _StreamListener:
         """Async generator yielding PlayerSkin."""
-        return _StreamListener(self._bus, "player_skin")
+        return _StreamListener(self._dispatcher, "player_skin")
 
     def interior_changes(self) -> _StreamListener:
         """Async generator yielding SetInterior."""
-        return _StreamListener(self._bus, "set_interior")
+        return _StreamListener(self._dispatcher, "set_interior")
 
     def vehicle_stream_ins(self) -> _StreamListener:
         """Async generator yielding VehicleStreamIn."""
-        return _StreamListener(self._bus, "vehicle_streamed_in")
+        return _StreamListener(self._dispatcher, "vehicle_streamed_in")
 
     def vehicle_stream_outs(self) -> _StreamListener:
         """Async generator yielding VehicleStreamOut."""
-        return _StreamListener(self._bus, "vehicle_streamed_out")
+        return _StreamListener(self._dispatcher, "vehicle_streamed_out")
 
     def player_deaths(self) -> _StreamListener:
         """Async generator yielding PlayerDeath."""
-        return _StreamListener(self._bus, "player_death")
+        return _StreamListener(self._dispatcher, "player_death")
 
     # ── Wait-for helpers ───────────────────────────────────────────────────────
 
@@ -824,7 +849,7 @@ class SAMPBot:
         filt = _make_obj_filter(
             predicate, {"dialog_id": dialog_id}, instance_of=dialog_type
         )
-        async for dlg in _StreamListener(self._bus, "dialog", filt):
+        async for dlg in _StreamListener(self._dispatcher, "dialog", filt):
             return dlg  # type: ignore[return-value]
 
     async def wait_for_chat(
@@ -835,7 +860,7 @@ class SAMPBot:
     ) -> ChatMessage:
         """Await the next public chat message matching all given filters."""
         filt = _make_obj_filter(predicate, {"player_id": player_id})
-        async for msg in _StreamListener(self._bus, "chat", filt):
+        async for msg in _StreamListener(self._dispatcher, "chat", filt):
             return msg
 
     async def wait_for_client_message(
@@ -846,7 +871,7 @@ class SAMPBot:
     ) -> ServerMessage:
         """Await the next server message matching all given filters."""
         filt = _make_obj_filter(predicate, {"color": color})
-        async for msg in _StreamListener(self._bus, "client_message", filt):
+        async for msg in _StreamListener(self._dispatcher, "client_message", filt):
             return msg
 
     async def wait_for_player_join(
@@ -858,7 +883,7 @@ class SAMPBot:
     ) -> PlayerJoin:
         """Await the next player join matching all given filters."""
         filt = _make_obj_filter(predicate, {"player_id": player_id, "name": name})
-        async for evt in _StreamListener(self._bus, "player_join", filt):
+        async for evt in _StreamListener(self._dispatcher, "player_join", filt):
             return evt
 
     # ── Actions ────────────────────────────────────────────────────────────────

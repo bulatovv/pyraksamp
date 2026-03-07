@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from pyraksamp import SAMPBot
 from pyraksamp._bus import _EventBus
+from pyraksamp._dispatcher import _Dispatcher
 from pyraksamp.dialogs import (
     _make_buttons,
     _make_dialog,
@@ -220,6 +221,7 @@ def _mock_self():
     """Minimal stand-in for SAMPBot — compatible with _CallbackListener."""
     bot = SimpleNamespace()
     bot._bus = _EventBus()
+    bot._dispatcher = _Dispatcher(bot._bus)
     bot._listeners = []
     bot._started = False
 
@@ -242,16 +244,20 @@ def _msgbox_dlg():
 
 async def _fire(bot, dlg):
     """Start all unstarted listeners, broadcast a dialog event, then yield."""
+    if bot._dispatcher._task is None:
+        bot._dispatcher.start()
     for listener in bot._listeners:
         if listener._task is None:
             listener.start()
     await asyncio.sleep(0)
     bot._bus.broadcast(("dialog", dlg))
-    await asyncio.sleep(0)
+    await asyncio.sleep(0)  # dispatcher routes
+    await asyncio.sleep(0)  # listener processes
 
 
 def test_on_dialog_bare_receives_all():
     """Bare @bot.on_dialog passes every dialog to the handler."""
+
     async def _inner():
         bot = _mock_self()
         received = []
@@ -259,11 +265,13 @@ def test_on_dialog_bare_receives_all():
         await _fire(bot, _input_dlg())
         await _fire(bot, _msgbox_dlg())
         assert len(received) == 2
+
     asyncio.run(_inner())
 
 
 def test_on_dialog_no_filter_receives_all():
     """@bot.on_dialog() with no args passes every dialog."""
+
     async def _inner():
         bot = _mock_self()
         received = []
@@ -271,46 +279,58 @@ def test_on_dialog_no_filter_receives_all():
         await _fire(bot, _input_dlg())
         await _fire(bot, _msgbox_dlg())
         assert len(received) == 2
+
     asyncio.run(_inner())
 
 
 def test_on_dialog_type_filter_passes_matching():
     """dialog_type=InputDialog lets InputDialog through."""
+
     async def _inner():
         bot = _mock_self()
         received = []
-        SAMPBot.on_dialog(bot, dialog_type=InputDialog)(lambda dlg: received.append(dlg))
+        SAMPBot.on_dialog(bot, dialog_type=InputDialog)(
+            lambda dlg: received.append(dlg)
+        )
         await _fire(bot, _input_dlg())
         assert len(received) == 1
         assert isinstance(received[0], InputDialog)
+
     asyncio.run(_inner())
 
 
 def test_on_dialog_type_filter_blocks_other():
     """dialog_type=InputDialog blocks MsgboxDialog."""
+
     async def _inner():
         bot = _mock_self()
         received = []
-        SAMPBot.on_dialog(bot, dialog_type=InputDialog)(lambda dlg: received.append(dlg))
+        SAMPBot.on_dialog(bot, dialog_type=InputDialog)(
+            lambda dlg: received.append(dlg)
+        )
         await _fire(bot, _msgbox_dlg())
         assert len(received) == 0
+
     asyncio.run(_inner())
 
 
 def test_on_dialog_dialog_id_filter():
     """dialog_id= matches only the exact ID."""
+
     async def _inner():
         bot = _mock_self()
         received = []
         SAMPBot.on_dialog(bot, dialog_id=1)(lambda dlg: received.append(dlg))
-        await _fire(bot, _input_dlg())   # id=1 — should pass
+        await _fire(bot, _input_dlg())  # id=1 — should pass
         await _fire(bot, _msgbox_dlg())  # id=2 — should be blocked
         assert len(received) == 1
+
     asyncio.run(_inner())
 
 
 def test_on_dialog_predicate_filter():
     """predicate= is applied on top of type filter."""
+
     async def _inner():
         bot = _mock_self()
         received = []
@@ -323,11 +343,13 @@ def test_on_dialog_predicate_filter():
         other = _make_dialog(3, 1, "Register", "OK", "", "", MagicMock())
         await _fire(bot, other)  # title="Register" — blocked by predicate
         assert len(received) == 1
+
     asyncio.run(_inner())
 
 
 def test_on_dialog_async_handler():
     """Async handlers are awaited correctly."""
+
     async def _inner():
         bot = _mock_self()
         received = []
@@ -338,6 +360,7 @@ def test_on_dialog_async_handler():
         SAMPBot.on_dialog(bot, dialog_type=InputDialog)(handler)
         await _fire(bot, _input_dlg())
         assert len(received) == 1
+
     asyncio.run(_inner())
 
 

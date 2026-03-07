@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from pyraksamp import SAMPBot
 from pyraksamp._bus import _EventBus
+from pyraksamp._dispatcher import _Dispatcher
 from pyraksamp._listener import _StreamListener
 from pyraksamp.dialogs import _make_dialog, InputDialog
 from pyraksamp.events import ChatMessage, PlayerJoin, ServerMessage
@@ -13,6 +14,12 @@ from unittest.mock import MagicMock
 
 def make_bus():
     return _EventBus()
+
+
+def _make_dispatcher(bus):
+    d = _Dispatcher(bus)
+    d.start()
+    return d
 
 
 # ── rpcs() ────────────────────────────────────────────────────────────────────
@@ -129,10 +136,11 @@ def test_events_stops_after_disconnect():
 def test_chat_yields_chat_messages():
     async def _inner():
         bus = make_bus()
+        d = _make_dispatcher(bus)
         results = []
 
         async def consume():
-            async for msg in _StreamListener(bus, "chat"):
+            async for msg in _StreamListener(d, "chat"):
                 results.append(msg)
 
         task = asyncio.create_task(consume())
@@ -149,10 +157,11 @@ def test_chat_yields_chat_messages():
 def test_typed_stream_skips_other_tags():
     async def _inner():
         bus = make_bus()
+        d = _make_dispatcher(bus)
         results = []
 
         async def consume():
-            async for msg in _StreamListener(bus, "chat"):
+            async for msg in _StreamListener(d, "chat"):
                 results.append(msg)
 
         task = asyncio.create_task(consume())
@@ -169,10 +178,11 @@ def test_typed_stream_skips_other_tags():
 def test_fan_out_two_consumers_both_receive():
     async def _inner():
         bus = make_bus()
+        d = _make_dispatcher(bus)
         a, b = [], []
 
         async def consume(out):
-            async for msg in _StreamListener(bus, "chat"):
+            async for msg in _StreamListener(d, "chat"):
                 out.append(msg)
 
         ta = asyncio.create_task(consume(a))

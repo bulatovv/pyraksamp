@@ -166,9 +166,24 @@ def test_on_vehicle_streamed_in_siren_cast_to_bool():
         bus.subscribe(q)
 
         client.on_vehicle_streamed_in(
-            10, 411, 0.0, 0.0, 0.0, 0.0, 1, 2, 1000.0, 0, 0, 0, 0, 0,
+            10,
+            411,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1,
+            2,
+            1000.0,
+            0,
+            0,
+            0,
+            0,
+            0,
             1,  # add_siren as int
-            0, 0, 0,
+            0,
+            0,
+            0,
         )
         loop_calls[0]()
 
