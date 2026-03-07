@@ -409,7 +409,7 @@ class SAMPBot:
 
             self._register_listener(
                 _CallbackListener(
-                    self._bus,
+                    self._dispatcher,
                     "rpc",
                     f,
                     predicate=filt

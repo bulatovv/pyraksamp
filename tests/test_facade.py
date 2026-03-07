@@ -156,6 +156,22 @@ def test_multiple_on_connect_handlers_all_fire():
     asyncio.run(_inner())
 
 
+def test_on_rpc_fires_on_rpc_event():
+    async def _inner():
+        with patch("pyraksamp._SAMPClient") as MockClient:
+            MockClient.return_value.start.return_value = True
+            bot = SAMPBot("host")
+            received = []
+            bot.on_rpc(rpc_id=42)(lambda rid, data: received.append((rid, data)))
+            await bot.start()
+            bot._bus.broadcast(("rpc", 42, b"\xff"))
+            await asyncio.sleep(0)  # dispatcher routes
+            await asyncio.sleep(0)  # listener processes
+            assert received == [(42, b"\xff")]
+
+    asyncio.run(_inner())
+
+
 def test_on_dialog_fires_on_dialog_event():
     async def _inner():
         with patch("pyraksamp._SAMPClient") as MockClient:
