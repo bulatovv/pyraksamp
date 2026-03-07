@@ -56,3 +56,7 @@ class _Actions:
     def send_command(self, text: str) -> None:
         """Send a slash command (e.g. '/stats') to the server (RPC 50)."""
         self._client.send_command(text)
+
+    def click_textdraw(self, textdraw_id: int) -> None:
+        """Send SelectTextDraw RPC (83) for the given textdraw ID."""
+        self._client.click_textdraw(textdraw_id)

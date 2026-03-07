@@ -28,72 +28,80 @@ Quick start::
 """
 
 import asyncio
+import inspect
 import random
 from collections.abc import Callable
 from typing import Any, overload
 
-from pyraksamp._core import SAMPClient as _SAMPClient
 from pyraksamp import _core
-from pyraksamp._bus import _EventBus
-from pyraksamp._bridge import _setup_bridge
-from pyraksamp._dispatcher import _Dispatcher
-from pyraksamp._listener import _StreamListener, _CallbackListener
 from pyraksamp._actions import _Actions
+from pyraksamp._bridge import _setup_bridge
+from pyraksamp._bus import _EventBus
+from pyraksamp._core import SAMPClient as _SAMPClient
+from pyraksamp._dispatcher import _Dispatcher
+from pyraksamp._listener import _CallbackListener, _StreamListener
 from pyraksamp._utils import _make_obj_filter
 from pyraksamp.dialogs import (
     AnyDialog,
-    MsgboxDialog,
-    InputDialog,
-    PasswordDialog,
-    ListDialog,
-    TablistDialog,
-    TablistHeadersDialog,
     Button,
     ButtonSelector,
-    ListRow,
-    TablistRow,
-    RowSelector,
     DialogAlreadyRespondedError,
-    _Responder as _DialogResponder,
+    InputDialog,
+    ListDialog,
+    ListRow,
+    MsgboxDialog,
+    PasswordDialog,
+    RowSelector,
+    TablistDialog,
+    TablistHeadersDialog,
+    TablistRow,
     _make_dialog,
+)
+from pyraksamp.dialogs import (
+    _Responder as _DialogResponder,
 )
 from pyraksamp.events import (
     ChatMessage,
-    ServerMessage,
+    Checkpoint,
+    DeathMessage,
     GameText,
+    Gravity,
+    PlayerColor,
+    PlayerDeath,
     PlayerJoin,
+    PlayerNameChange,
     PlayerQuit,
+    PlayerSkin,
     PlayerStreamIn,
     PlayerStreamOut,
-    SetHealth,
-    SetArmour,
-    SetPosition,
-    Checkpoint,
-    PlayerNameChange,
-    ToggleControllable,
-    PlayerTime,
-    DeathMessage,
-    SetArmedWeapon,
-    SpawnInfo,
     PlayerTeam,
+    PlayerTime,
     PutInVehicle,
-    PlayerColor,
-    WorldTime,
-    ToggleSpectating,
-    WantedLevel,
-    WeaponAmmo,
-    Gravity,
-    Weather,
-    PlayerSkin,
+    ServerMessage,
+    SetArmedWeapon,
+    SetArmour,
+    SetHealth,
     SetInterior,
+    SetPosition,
+    SpawnInfo,
+    ToggleControllable,
+    ToggleSpectating,
     VehicleStreamIn,
     VehicleStreamOut,
-    PlayerDeath,
+    WantedLevel,
+    WeaponAmmo,
+    Weather,
+    WorldTime,
 )
+from pyraksamp.textdraws import SelectableTextDraw, TextDraw, TextDraws
 
 __all__ = [
     # Client
     "SAMPBot",
+    # TextDraw types
+    "TextDraw",
+    "TextDraws",
+    "SelectableTextDraw",
     "SAMPClient",  # backwards-compatibility alias
     "gen_gpci",
     # Reliability constants (used with send_rpc)
@@ -328,6 +336,7 @@ class SAMPBot:
         )
         self._listeners: list[_CallbackListener] = []
         self._started: bool = False
+        self.textdraws = TextDraws(click_fn=self._actions.click_textdraw)
 
     def _register_listener(self, listener: _CallbackListener) -> None:
         self._listeners.append(listener)
@@ -351,6 +360,17 @@ class SAMPBot:
         loop = asyncio.get_running_loop()
         _setup_bridge(self._client, self._bus, self._make_dialog, loop)
         self._dispatcher.start()
+        # Feed textdraw events into the registry (must be registered before user listeners)
+        for tag, fn in [
+            ("textdraw_show", self.textdraws._on_show),
+            ("textdraw_hide", self.textdraws._on_hide),
+            ("textdraw_edit", self.textdraws._on_edit),
+            ("textdraw_toggle_select", self.textdraws._on_toggle_select),
+            ("disconnect", self.textdraws._on_disconnect),
+        ]:
+            self._register_listener(
+                _CallbackListener(self._dispatcher, tag, fn, extract=lambda e: e[1:])
+            )
         self._started = True
         for listener in self._listeners:
             listener.start()
@@ -718,6 +738,62 @@ class SAMPBot:
         self._register_listener(_CallbackListener(self._dispatcher, "player_death", fn))
         return fn
 
+    def on_textdraw(
+        self,
+        fn=None,
+        *,
+        id: int | None = None,
+        text: str | None = None,
+        predicate: Callable[[TextDraw], bool] | None = None,
+        selectable: bool | None = None,
+    ):
+        """Register a callback fired each time a matching textdraw is shown.
+
+        Parameters
+        ----------
+        id:
+            Only fire for textdraws with this exact id.
+        text:
+            Only fire for textdraws whose text equals this value.
+        predicate:
+            Arbitrary filter called with the TextDraw object.
+        selectable:
+            True → only SelectableTextDraw; False → exclude them; None → all.
+        """
+        filt = _make_obj_filter(predicate, {"id": id, "text": text})
+
+        def decorator(f):
+            async def wrapped(td_id, *_args):
+                # Yield once so that the registry _on_show coroutine (registered
+                # first in the dispatcher routes) can complete before we look up.
+                await asyncio.sleep(0)
+                td = self.textdraws._registry.get(td_id)
+                if td is None:
+                    return
+                if selectable is True and not isinstance(td, SelectableTextDraw):
+                    return
+                if selectable is False and isinstance(td, SelectableTextDraw):
+                    return
+                if filt is not None and not filt(td):
+                    return
+                if inspect.iscoroutinefunction(f):
+                    await f(td)
+                else:
+                    f(td)
+
+            # extract only td_id (index 1 in event tuple); registry already updated
+            self._register_listener(
+                _CallbackListener(
+                    self._dispatcher,
+                    "textdraw_show",
+                    wrapped,
+                    extract=lambda e: (e[1],),
+                )
+            )
+            return f
+
+        return decorator(fn) if fn is not None else decorator
+
     # ── Async generators ───────────────────────────────────────────────────────
 
     async def rpcs(self, rpc_id: int | None = None):
@@ -922,6 +998,10 @@ class SAMPBot:
 
     def send_command(self, text: str) -> None:
         return self._actions.send_command(text)
+
+    def click_textdraw(self, textdraw_id: int) -> None:
+        """Send SelectTextDraw RPC (83) for the given textdraw ID."""
+        self._actions.click_textdraw(textdraw_id)
 
 
 # Backwards-compatibility alias

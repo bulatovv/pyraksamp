@@ -78,6 +78,13 @@ const RPC_EXIT_VEHICLE:    u8 = 154;
 const RPC_SERVER_COMMAND:  u8 = 50;
 const RPC_UPDATE_SCORES:   u8 = 155;
 
+// TextDraw RPCs
+const RPC_TEXTDRAW_SHOW:          u8 = 134;
+const RPC_TEXTDRAW_HIDE:          u8 = 135;
+const RPC_TEXTDRAW_EDIT:          u8 = 105;
+const RPC_TEXTDRAW_TOGGLE_SELECT: u8 = 83;
+const RPC_TEXTDRAW_SELECT:        u8 = 83;
+
 const NETGAME_VERSION:       u32 = 4057;
 const NETCODE_CONNCOOKIELULZ: u16 = 0x6969;
 const DEFAULT_GPCI: &str = "3E9B8D0C4A7F2E6B1D5A3C9E8F2B4D6A0C7E9B3";
@@ -134,6 +141,10 @@ pub struct Callbacks {
     pub on_vehicle_streamed_in: Option<Arc<dyn Fn(u16, i32, f32, f32, f32, f32, u8, u8, f32, u8, u32, u32, u8, u8, u8, u8, u32, u32) + Send + Sync>>,
     pub on_vehicle_streamed_out:Option<Arc<dyn Fn(u16) + Send + Sync>>,
     pub on_player_death:        Option<Arc<dyn Fn(u16) + Send + Sync>>,
+    pub on_textdraw_show:          Option<Arc<dyn Fn(u16,u8,f32,f32,u32,f32,f32,u32,u8,u8,u32,u8,u8,f32,f32,u16,f32,f32,f32,f32,i16,i16,String) + Send + Sync>>,
+    pub on_textdraw_hide:          Option<Arc<dyn Fn(u16) + Send + Sync>>,
+    pub on_textdraw_edit:          Option<Arc<dyn Fn(u16, String) + Send + Sync>>,
+    pub on_textdraw_toggle_select: Option<Arc<dyn Fn(bool, u32) + Send + Sync>>,
 }
 
 impl Default for Callbacks {
@@ -157,6 +168,8 @@ impl Callbacks {
             on_gravity: None, on_weather: None, on_player_skin: None,
             on_set_interior: None, on_vehicle_streamed_in: None,
             on_vehicle_streamed_out: None, on_player_death: None,
+            on_textdraw_show: None, on_textdraw_hide: None,
+            on_textdraw_edit: None, on_textdraw_toggle_select: None,
         }
     }
 }
@@ -765,6 +778,59 @@ impl SampClient {
                     fire!(self.callbacks, on_player_death, pid);
                 }
 
+                RPC_TEXTDRAW_SHOW => {
+                    let tid    = bs.read_uint16_le().ok()?;
+                    let flags  = bs.read_uint8().ok()?;
+                    let lw     = bs.read_float_le().ok()?;
+                    let lh     = bs.read_float_le().ok()?;
+                    let lcol   = bs.read_uint32_le().ok()?;
+                    let linew  = bs.read_float_le().ok()?;
+                    let lineh  = bs.read_float_le().ok()?;
+                    let bcol   = bs.read_uint32_le().ok()?;
+                    let shadow = bs.read_uint8().ok()?;
+                    let outline= bs.read_uint8().ok()?;
+                    let bgcol  = bs.read_uint32_le().ok()?;
+                    let style  = bs.read_uint8().ok()?;
+                    let sel    = bs.read_uint8().ok()?;
+                    let x      = bs.read_float_le().ok()?;
+                    let y      = bs.read_float_le().ok()?;
+                    let model  = bs.read_uint16_le().ok()?;
+                    let rx     = bs.read_float_le().ok()?;
+                    let ry     = bs.read_float_le().ok()?;
+                    let rz     = bs.read_float_le().ok()?;
+                    let zoom   = bs.read_float_le().ok()?;
+                    let col1   = bs.read_int16_le().ok()?;
+                    let col2   = bs.read_int16_le().ok()?;
+                    let tlen   = bs.read_uint16_le().ok()? as usize;
+                    let mut tbuf = vec![0u8; tlen];
+                    if tlen > 0 { bs.read_aligned_bytes(&mut tbuf).ok()?; }
+                    let text = String::from_utf8_lossy(&tbuf).into_owned();
+                    fire!(self.callbacks, on_textdraw_show,
+                          tid, flags, lw, lh, lcol, linew, lineh, bcol,
+                          shadow, outline, bgcol, style, sel, x, y, model,
+                          rx, ry, rz, zoom, col1, col2, text);
+                }
+
+                RPC_TEXTDRAW_HIDE => {
+                    let tid = bs.read_uint16_le().ok()?;
+                    fire!(self.callbacks, on_textdraw_hide, tid);
+                }
+
+                RPC_TEXTDRAW_EDIT => {
+                    let tid  = bs.read_uint16_le().ok()?;
+                    let tlen = bs.read_uint16_le().ok()? as usize;
+                    let mut tbuf = vec![0u8; tlen];
+                    if tlen > 0 { bs.read_aligned_bytes(&mut tbuf).ok()?; }
+                    let text = String::from_utf8_lossy(&tbuf).into_owned();
+                    fire!(self.callbacks, on_textdraw_edit, tid, text);
+                }
+
+                RPC_TEXTDRAW_TOGGLE_SELECT => {
+                    let enable = bs.read_uint8().ok()? != 0;
+                    let color  = bs.read_uint32_le().ok()?;
+                    fire!(self.callbacks, on_textdraw_toggle_select, enable, color);
+                }
+
                 _ => {}
             }
             Some(())
@@ -1007,6 +1073,12 @@ impl SampClient {
             bs.write_aligned_bytes(text.as_bytes());
         }
         self.send_rpc(RPC_SERVER_COMMAND, bs.as_bytes(), REL_RELIABLE);
+    }
+
+    pub fn click_textdraw(&self, textdraw_id: u16) {
+        let mut bs = BitStream::new();
+        bs.write_uint16_le(textdraw_id);
+        self.send_rpc(RPC_TEXTDRAW_SELECT, bs.as_bytes(), REL_RELIABLE_ORDERED);
     }
 }
 

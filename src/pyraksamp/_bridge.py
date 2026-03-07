@@ -271,6 +271,69 @@ def _setup_bridge(
         evt = PlayerDeath(player_id=pid)
         loop.call_soon_threadsafe(lambda: bus.broadcast(("player_death", evt)))
 
+    def on_textdraw_show(
+        td_id: int,
+        flags: int,
+        lw: float,
+        lh: float,
+        lcol: int,
+        linew: float,
+        lineh: float,
+        bcol: int,
+        shadow: int,
+        outline: int,
+        bgcol: int,
+        style: int,
+        sel: int,
+        x: float,
+        y: float,
+        model: int,
+        rx: float,
+        ry: float,
+        rz: float,
+        zoom: float,
+        col1: int,
+        col2: int,
+        text: str,
+    ):
+        args = (
+            td_id,
+            flags,
+            lw,
+            lh,
+            lcol,
+            linew,
+            lineh,
+            bcol,
+            shadow,
+            outline,
+            bgcol,
+            style,
+            sel,
+            x,
+            y,
+            model,
+            rx,
+            ry,
+            rz,
+            zoom,
+            col1,
+            col2,
+            text,
+        )
+        loop.call_soon_threadsafe(lambda: bus.broadcast(("textdraw_show", *args)))
+
+    def on_textdraw_hide(td_id: int):
+        loop.call_soon_threadsafe(lambda: bus.broadcast(("textdraw_hide", td_id)))
+
+    def on_textdraw_edit(td_id: int, text: str):
+        loop.call_soon_threadsafe(lambda: bus.broadcast(("textdraw_edit", td_id, text)))
+
+    def on_textdraw_toggle_select(enable: bool, color: int):
+        loop.call_soon_threadsafe(
+            lambda: bus.broadcast(("textdraw_toggle_select", enable, color))
+        )
+
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     client.on_rpc = on_rpc
@@ -308,3 +371,7 @@ def _setup_bridge(
     client.on_vehicle_streamed_in = on_vehicle_streamed_in
     client.on_vehicle_streamed_out = on_vehicle_streamed_out
     client.on_player_death = on_player_death
+    client.on_textdraw_show = on_textdraw_show
+    client.on_textdraw_hide = on_textdraw_hide
+    client.on_textdraw_edit = on_textdraw_edit
+    client.on_textdraw_toggle_select = on_textdraw_toggle_select

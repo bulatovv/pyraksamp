@@ -330,6 +330,12 @@ impl BitStream {
         Ok(u16::from_le_bytes(d))
     }
 
+    pub fn read_int16_le(&mut self) -> Result<i16, &'static str> {
+        let mut d = [0u8; 2];
+        self.read_bits(&mut d, 16, true)?;
+        Ok(i16::from_le_bytes(d))
+    }
+
     pub fn read_uint32_le(&mut self) -> Result<u32, &'static str> {
         let mut d = [0u8; 4];
         self.read_bits(&mut d, 32, true)?;

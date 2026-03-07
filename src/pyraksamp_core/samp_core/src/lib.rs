@@ -43,6 +43,10 @@ struct PyCbs {
     on_vehicle_streamed_in: Option<Py<PyAny>>,
     on_vehicle_streamed_out:Option<Py<PyAny>>,
     on_player_death:        Option<Py<PyAny>>,
+    on_textdraw_show:          Option<Py<PyAny>>,
+    on_textdraw_hide:          Option<Py<PyAny>>,
+    on_textdraw_edit:          Option<Py<PyAny>>,
+    on_textdraw_toggle_select: Option<Py<PyAny>>,
 }
 
 impl PyCbs {
@@ -62,6 +66,8 @@ impl PyCbs {
             on_gravity: None, on_weather: None, on_player_skin: None,
             on_set_interior: None, on_vehicle_streamed_in: None,
             on_vehicle_streamed_out: None, on_player_death: None,
+            on_textdraw_show: None, on_textdraw_hide: None,
+            on_textdraw_edit: None, on_textdraw_toggle_select: None,
         }
     }
 }
@@ -426,6 +432,71 @@ impl PySAMPClient {
         self.py_cbs.on_player_death = cb.as_ref().map(|c| c.clone_ref(py));
         self.inner.callbacks.lock().unwrap().on_player_death = cb.map(|c| wrap!(c, pid: u16));
     }
+
+    #[getter] fn get_on_textdraw_show(&self, py: Python) -> Option<Py<PyAny>> { cloned(py, &self.py_cbs.on_textdraw_show) }
+    #[setter] fn set_on_textdraw_show(&mut self, py: Python, cb: Option<Py<PyAny>>) {
+        self.py_cbs.on_textdraw_show = cb.as_ref().map(|c| c.clone_ref(py));
+        self.inner.callbacks.lock().unwrap().on_textdraw_show = cb.map(|c| {
+            Arc::new(move |tid: u16, flags: u8, lw: f32, lh: f32, lcol: u32,
+                           linew: f32, lineh: f32, bcol: u32, shadow: u8, outline: u8,
+                           bgcol: u32, style: u8, sel: u8, x: f32, y: f32, model: u16,
+                           rx: f32, ry: f32, rz: f32, zoom: f32, col1: i16, col2: i16,
+                           text: String| {
+                Python::with_gil(|py| {
+                    use pyo3::IntoPyObject;
+                    use pyo3::types::PyTuple;
+                    let items: Vec<pyo3::PyObject> = vec![
+                        tid.into_pyobject(py).unwrap().into_any().unbind(),
+                        flags.into_pyobject(py).unwrap().into_any().unbind(),
+                        lw.into_pyobject(py).unwrap().into_any().unbind(),
+                        lh.into_pyobject(py).unwrap().into_any().unbind(),
+                        lcol.into_pyobject(py).unwrap().into_any().unbind(),
+                        linew.into_pyobject(py).unwrap().into_any().unbind(),
+                        lineh.into_pyobject(py).unwrap().into_any().unbind(),
+                        bcol.into_pyobject(py).unwrap().into_any().unbind(),
+                        shadow.into_pyobject(py).unwrap().into_any().unbind(),
+                        outline.into_pyobject(py).unwrap().into_any().unbind(),
+                        bgcol.into_pyobject(py).unwrap().into_any().unbind(),
+                        style.into_pyobject(py).unwrap().into_any().unbind(),
+                        sel.into_pyobject(py).unwrap().into_any().unbind(),
+                        x.into_pyobject(py).unwrap().into_any().unbind(),
+                        y.into_pyobject(py).unwrap().into_any().unbind(),
+                        model.into_pyobject(py).unwrap().into_any().unbind(),
+                        rx.into_pyobject(py).unwrap().into_any().unbind(),
+                        ry.into_pyobject(py).unwrap().into_any().unbind(),
+                        rz.into_pyobject(py).unwrap().into_any().unbind(),
+                        zoom.into_pyobject(py).unwrap().into_any().unbind(),
+                        col1.into_pyobject(py).unwrap().into_any().unbind(),
+                        col2.into_pyobject(py).unwrap().into_any().unbind(),
+                        text.into_pyobject(py).unwrap().into_any().unbind(),
+                    ];
+                    let _ = c.call1(py, PyTuple::new(py, items).unwrap());
+                });
+            }) as Arc<dyn Fn(u16,u8,f32,f32,u32,f32,f32,u32,u8,u8,u32,u8,u8,f32,f32,u16,f32,f32,f32,f32,i16,i16,String) + Send + Sync>
+        });
+    }
+
+    #[getter] fn get_on_textdraw_hide(&self, py: Python) -> Option<Py<PyAny>> { cloned(py, &self.py_cbs.on_textdraw_hide) }
+    #[setter] fn set_on_textdraw_hide(&mut self, py: Python, cb: Option<Py<PyAny>>) {
+        self.py_cbs.on_textdraw_hide = cb.as_ref().map(|c| c.clone_ref(py));
+        self.inner.callbacks.lock().unwrap().on_textdraw_hide = cb.map(|c| wrap!(c, tid: u16));
+    }
+
+    #[getter] fn get_on_textdraw_edit(&self, py: Python) -> Option<Py<PyAny>> { cloned(py, &self.py_cbs.on_textdraw_edit) }
+    #[setter] fn set_on_textdraw_edit(&mut self, py: Python, cb: Option<Py<PyAny>>) {
+        self.py_cbs.on_textdraw_edit = cb.as_ref().map(|c| c.clone_ref(py));
+        self.inner.callbacks.lock().unwrap().on_textdraw_edit = cb.map(|c| wrap!(c, tid: u16, text: String));
+    }
+
+    #[getter] fn get_on_textdraw_toggle_select(&self, py: Python) -> Option<Py<PyAny>> { cloned(py, &self.py_cbs.on_textdraw_toggle_select) }
+    #[setter] fn set_on_textdraw_toggle_select(&mut self, py: Python, cb: Option<Py<PyAny>>) {
+        self.py_cbs.on_textdraw_toggle_select = cb.as_ref().map(|c| c.clone_ref(py));
+        self.inner.callbacks.lock().unwrap().on_textdraw_toggle_select = cb.map(|c| wrap!(c, enable: bool, color: u32));
+    }
+
+    fn click_textdraw(&self, textdraw_id: u16) {
+        self.inner.click_textdraw(textdraw_id);
+    }
 }
 
 // ── Module ────────────────────────────────────────────────────────────────────
@@ -507,6 +578,12 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("RPC_ENTER_VEHICLE",  26u8)?;
     m.add("RPC_EXIT_VEHICLE",   154u8)?;
     m.add("RPC_SERVER_COMMAND", 50u8)?;
+
+    // TextDraw RPC IDs
+    m.add("RPC_TEXTDRAW_SHOW",          134u8)?;
+    m.add("RPC_TEXTDRAW_HIDE",          135u8)?;
+    m.add("RPC_TEXTDRAW_EDIT",          105u8)?;
+    m.add("RPC_CLICK_TEXTDRAW",         83u8)?;
 
     Ok(())
 }
