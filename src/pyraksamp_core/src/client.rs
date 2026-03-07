@@ -95,6 +95,7 @@ fn needs_ordering(rel: u8) -> bool {
 
 // ── Callbacks ─────────────────────────────────────────────────────────────────
 
+#[allow(clippy::type_complexity)]
 pub struct Callbacks {
     pub on_connect:             Option<Arc<dyn Fn() + Send + Sync>>,
     pub on_disconnect:          Option<Arc<dyn Fn() + Send + Sync>>,
@@ -133,6 +134,10 @@ pub struct Callbacks {
     pub on_vehicle_streamed_in: Option<Arc<dyn Fn(u16, i32, f32, f32, f32, f32, u8, u8, f32, u8, u32, u32, u8, u8, u8, u8, u32, u32) + Send + Sync>>,
     pub on_vehicle_streamed_out:Option<Arc<dyn Fn(u16) + Send + Sync>>,
     pub on_player_death:        Option<Arc<dyn Fn(u16) + Send + Sync>>,
+}
+
+impl Default for Callbacks {
+    fn default() -> Self { Self::new() }
 }
 
 impl Callbacks {
@@ -233,16 +238,6 @@ impl SampClient {
     pub fn player_id(&self)    -> i32  { *self.player_id.lock().unwrap() }
 
     // ─── Internal send primitives ─────────────────────────────────────────────
-
-    fn send_raw(&self, data: &[u8]) {
-        let guard = self.net.lock().unwrap();
-        if let Some(ns) = guard.as_ref() {
-            let sock = Arc::clone(&ns.sock);
-            let addr = ns.server_addr;
-            drop(guard);
-            let _ = sock.send_to(data, addr);
-        }
-    }
 
     fn send_encrypted(&self, data: &[u8]) {
         let (sock, addr) = {
@@ -349,12 +344,10 @@ impl SampClient {
     fn handle_connection_accepted_raw(&self, data: &[u8]) {
         if data.len() < 9 { return; }
         let mut bs = BitStream::from_bytes(data);
-        let pid: u16;
-        let chal: u32;
         // Skip: ID_CONNECTION_REQUEST_ACCEPTED(8b) + binaryAddress(32b) + port(16b)
         bs.skip_bits(56);
-        pid  = match bs.read_uint16_le() { Ok(v) => v, Err(_) => return };
-        chal = match bs.read_uint32_le()  { Ok(v) => v, Err(_) => return };
+        let pid: u16  = match bs.read_uint16_le() { Ok(v) => v, Err(_) => return };
+        let chal: u32 = match bs.read_uint32_le()  { Ok(v) => v, Err(_) => return };
 
         *self.player_id.lock().unwrap() = pid as i32;
         *self.challenge.lock().unwrap() = chal;
@@ -565,7 +558,7 @@ impl SampClient {
                     let gtype = bs.read_int32_le().ok()?;
                     let time  = bs.read_int32_le().ok()?;
                     let mlen  = bs.read_int32_le().ok()?;
-                    if mlen < 0 || mlen > 400 { return None; }
+                    if !(0..=400).contains(&mlen) { return None; }
                     let mut mbuf = vec![0u8; mlen as usize];
                     if mlen > 0 { bs.read_aligned_bytes(&mut mbuf).ok()?; }
                     let text = String::from_utf8_lossy(&mbuf).into_owned();
@@ -795,11 +788,10 @@ impl SampClient {
                 bs.skip_bits(8); // ID_RPC
                 let rpc_id = match bs.read_uint8() { Ok(v) => v, Err(_) => return };
                 let bit_len = match bs.read_compressed_uint32() { Ok(v) => v, Err(_) => return };
-                let byte_len = ((bit_len as usize) + 7) / 8;
+                let byte_len = (bit_len as usize).div_ceil(8);
                 let mut payload = vec![0u8; byte_len];
-                if byte_len > 0 {
-                    if bs.read_bits(&mut payload, bit_len as i32, false).is_err() { return; }
-                }
+                if byte_len > 0
+                    && bs.read_bits(&mut payload, bit_len as i32, false).is_err() { return; }
                 self.handle_rpc(rpc_id, &payload);
             }
             id if id == ID_INTERNAL_PING => {

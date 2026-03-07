@@ -25,17 +25,12 @@ static ENGLISH_FREQ: [u32; 256] = [
 ];
 
 #[derive(Copy, Clone)]
+#[derive(Default)]
 struct HuffNode {
     left: i16,
     right: i16,
     value: u8,
     weight: u32,
-}
-
-impl Default for HuffNode {
-    fn default() -> Self {
-        HuffNode { left: 0, right: 0, value: 0, weight: 0 }
-    }
 }
 
 pub struct HuffTree {
@@ -105,6 +100,10 @@ pub struct BitStream {
     rpos: i32, // read position in bits
 }
 
+impl Default for BitStream {
+    fn default() -> Self { Self::new() }
+}
+
 impl BitStream {
     pub fn new() -> Self {
         let mut buf = Vec::with_capacity(64);
@@ -154,7 +153,7 @@ impl BitStream {
         while remaining > 0 {
             let mut b = data[offset];
             if remaining < 8 && right_aligned {
-                b = b << (8 - remaining);
+                b <<= 8 - remaining;
             }
 
             let mod8 = (self.wpos & 7) as u32;
@@ -165,7 +164,7 @@ impl BitStream {
                 let bits_in_first = 8 - mod8 as i32;
                 if bits_in_first < cmp::min(8, remaining) {
                     let idx = (self.wpos >> 3) as usize + 1;
-                    self.buf[idx] = (b << bits_in_first as u32) as u8;
+                    self.buf[idx] = b << bits_in_first as u32;
                 }
             }
 
@@ -492,8 +491,7 @@ mod tests {
     const H_SPACE:     &[u8] = &[0xCF, 0x80];
     const H_NEWLINE:   &[u8] = &[0xD8, 0xD0];
     const H_HELLO:     &[u8] = &[0x85, 0xB0, 0x25, 0x28];
-    const H_HELLO_CAP: &[u8] = &[0x86, 0x9F, 0x02, 0x52, 0x80];
-    const H_HELLO_W:   &[u8] = &[0x8E, 0x9F, 0x02, 0x52, 0x8E, 0xAE, 0x46, 0x64, 0xE0];
+const H_HELLO_W:   &[u8] = &[0x8E, 0x9F, 0x02, 0x52, 0x8E, 0xAE, 0x46, 0x64, 0xE0];
     const H_TEST123:   &[u8] = &[0x8C, 0x6C, 0x6E, 0xE7, 0x55, 0x6D, 0x5E, 0x00];
     const H_AAABBBCCC: &[u8] = &[0x95, 0x15, 0x15, 0x15, 0x2A, 0x15, 0x0A, 0x84, 0xED, 0x9D, 0xB3, 0xB4];
     const H_ABCDEFGHIJ:&[u8] = &[0x8D, 0x98, 0xFA, 0x1C, 0x0E, 0x9B, 0x09, 0x57];

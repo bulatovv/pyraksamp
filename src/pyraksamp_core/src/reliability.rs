@@ -54,6 +54,10 @@ pub struct SplitBuffer {
     pending: HashMap<u16, SplitFragment>,
 }
 
+impl Default for SplitBuffer {
+    fn default() -> Self { Self::new() }
+}
+
 impl SplitBuffer {
     pub fn new() -> Self {
         SplitBuffer { pending: HashMap::new() }
@@ -165,7 +169,7 @@ pub fn parse(data: &[u8], split_buf: &mut SplitBuffer) -> Option<ParseResult> {
             let data_bits = match bs.read_compressed_uint16() {
                 Ok(v) => v, Err(_) => break,
             };
-            let data_bytes = ((data_bits as usize) + 7) / 8;
+            let data_bytes = (data_bits as usize).div_ceil(8);
             let mut chunk = vec![0u8; data_bytes];
             if data_bytes > 0 && bs.read_aligned_bytes(&mut chunk).is_err() { break; }
 
@@ -208,7 +212,7 @@ pub fn parse(data: &[u8], split_buf: &mut SplitBuffer) -> Option<ParseResult> {
         let data_bits = match bs.read_compressed_uint16() {
             Ok(v) => v, Err(_) => break,
         };
-        let data_bytes = ((data_bits as usize) + 7) / 8;
+        let data_bytes = (data_bits as usize).div_ceil(8);
         let mut pkt_data = vec![0u8; data_bytes];
         if bs.read_aligned_bytes(&mut pkt_data).is_err() { break; }
 
