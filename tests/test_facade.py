@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from pyraksamp import SAMPBot, SAMPClient, gen_gpci
 from pyraksamp import _core
-from pyraksamp.dialogs import InputDialog, _make_dialog
+from pyraksamp.dialogs import InputDialog, _make_dialog, _Responder
 from unittest.mock import MagicMock
 
 
@@ -180,7 +180,15 @@ def test_on_dialog_fires_on_dialog_event():
             received = []
             bot.on_dialog(dialog_type=InputDialog)(lambda dlg: received.append(dlg))
             await bot.start()
-            dlg = _make_dialog(1, 1, "Login", "Submit", "Cancel", "Enter:", MagicMock())
+            dlg = _make_dialog(
+                1,
+                1,
+                "Login",
+                "Submit",
+                "Cancel",
+                "Enter:",
+                _Responder(MagicMock().send_dialog_response),
+            )
             bot._bus.broadcast(("dialog", dlg))
             await asyncio.sleep(0)  # dispatcher routes
             await asyncio.sleep(0)  # listener processes
@@ -273,7 +281,15 @@ def test_dialogs_stream_yields_dialog_events():
             MockClient.return_value.start.return_value = True
             bot = SAMPBot("host")
             await bot.start()
-            dlg = _make_dialog(1, 0, "T", "OK", "", "body", MagicMock())
+            dlg = _make_dialog(
+                1,
+                0,
+                "T",
+                "OK",
+                "",
+                "body",
+                _Responder(MagicMock().send_dialog_response),
+            )
             results = []
 
             async def consume():

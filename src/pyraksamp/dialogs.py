@@ -4,21 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import ClassVar, Generic, Literal, Protocol, TypeVar
-
-_R = TypeVar("_R")
-
-
-class _Responder(Protocol):
-    """Structural interface for objects that can respond to SA:MP dialogs."""
-
-    def send_dialog_response(
-        self,
-        dialog_id: int,
-        button: int,
-        list_item: int = 0,
-        text: str = "",
-    ) -> None: ...
+from typing import ClassVar, Literal
 
 
 __all__ = [
@@ -34,7 +20,36 @@ __all__ = [
     "ListRow",
     "TablistRow",
     "RowSelector",
+    "DialogAlreadyRespondedError",
 ]
+
+
+class DialogAlreadyRespondedError(Exception):
+    """Raised when a dialog is responded to more than once."""
+
+    def __init__(self, dialog_id: int) -> None:
+        super().__init__(f"dialog {dialog_id} has already been responded to")
+        self.dialog_id = dialog_id
+
+
+class _Responder:
+    """Tracks response state for a single dialog event."""
+
+    __slots__ = ("_fn", "_responded")
+
+    def __init__(self, fn) -> None:
+        self._fn = fn
+        self._responded = False
+
+    @property
+    def is_responded(self) -> bool:
+        return self._responded
+
+    def send_dialog_response(self, dialog_id: int, /, **kwargs) -> None:
+        if self._responded:
+            raise DialogAlreadyRespondedError(dialog_id)
+        self._responded = True
+        self._fn(dialog_id, **kwargs)
 
 
 # ── Buttons ────────────────────────────────────────────────────────────────────
@@ -47,11 +62,11 @@ class Button:
     label: str
     id: int
     _dialog_id: int = field(repr=False, compare=False)
-    _bot: _Responder = field(repr=False, compare=False)
+    _responder: _Responder = field(repr=False, compare=False)
 
     def click(self) -> None:
         """Send this button's response to the server."""
-        self._bot.send_dialog_response(self._dialog_id, button=self.id)
+        self._responder.send_dialog_response(self._dialog_id, button=self.id)
 
 
 class ButtonSelector:
@@ -86,12 +101,12 @@ class ButtonSelector:
 
 
 def _make_buttons(
-    dialog_id: int, button1: str, button2: str, bot: _Responder
+    dialog_id: int, button1: str, button2: str, responder: _Responder
 ) -> ButtonSelector:
     # [0]=left/OK (wire id=1), [1]=right/Cancel (wire id=0)
-    left = Button(label=button1, id=1, _dialog_id=dialog_id, _bot=bot)
+    left = Button(label=button1, id=1, _dialog_id=dialog_id, _responder=responder)
     if button2:
-        right = Button(label=button2, id=0, _dialog_id=dialog_id, _bot=bot)
+        right = Button(label=button2, id=0, _dialog_id=dialog_id, _responder=responder)
         return ButtonSelector((left, right))
     return ButtonSelector((left,))
 
@@ -106,11 +121,13 @@ class ListRow:
     text: str
     index: int
     _dialog_id: int = field(repr=False, compare=False)
-    _bot: _Responder = field(repr=False, compare=False)
+    _responder: _Responder = field(repr=False, compare=False)
 
     def select(self) -> None:
         """Send a selection response for this row."""
-        self._bot.send_dialog_response(self._dialog_id, button=1, list_item=self.index)
+        self._responder.send_dialog_response(
+            self._dialog_id, button=1, list_item=self.index
+        )
 
 
 @dataclass(slots=True, frozen=True)
@@ -120,11 +137,13 @@ class TablistRow:
     columns: tuple[str, ...]
     index: int
     _dialog_id: int = field(repr=False, compare=False)
-    _bot: _Responder = field(repr=False, compare=False)
+    _responder: _Responder = field(repr=False, compare=False)
 
     def select(self) -> None:
         """Send a selection response for this row."""
-        self._bot.send_dialog_response(self._dialog_id, button=1, list_item=self.index)
+        self._responder.send_dialog_response(
+            self._dialog_id, button=1, list_item=self.index
+        )
 
     def __getitem__(self, col: int) -> str:
         return self.columns[col]
@@ -133,7 +152,7 @@ class TablistRow:
         return iter(self.columns)
 
 
-class RowSelector(Generic[_R]):
+class RowSelector[_R]:
     """Indexed and predicate-searchable collection of dialog rows."""
 
     __slots__ = ("_rows",)
@@ -178,15 +197,19 @@ class MsgboxDialog:
     button1: str
     button2: str
     buttons: ButtonSelector
-    _bot: _Responder = field(repr=False, compare=False)
+    _responder: _Responder = field(repr=False, compare=False)
+
+    @property
+    def is_responded(self) -> bool:
+        return self._responder.is_responded
 
     def ok(self) -> None:
         """Send the OK (first button) response."""
-        self._bot.send_dialog_response(self.dialog_id, button=1)
+        self._responder.send_dialog_response(self.dialog_id, button=1)
 
     def cancel(self) -> None:
         """Send the Cancel (second button) response."""
-        self._bot.send_dialog_response(self.dialog_id, button=0)
+        self._responder.send_dialog_response(self.dialog_id, button=0)
 
 
 @dataclass(slots=True, frozen=True)
@@ -200,15 +223,19 @@ class InputDialog:
     button1: str
     button2: str
     buttons: ButtonSelector
-    _bot: _Responder = field(repr=False, compare=False)
+    _responder: _Responder = field(repr=False, compare=False)
+
+    @property
+    def is_responded(self) -> bool:
+        return self._responder.is_responded
 
     def submit(self, text: str = "") -> None:
         """Send the OK response with the given text input."""
-        self._bot.send_dialog_response(self.dialog_id, button=1, text=text)
+        self._responder.send_dialog_response(self.dialog_id, button=1, text=text)
 
     def cancel(self) -> None:
         """Send the Cancel response."""
-        self._bot.send_dialog_response(self.dialog_id, button=0)
+        self._responder.send_dialog_response(self.dialog_id, button=0)
 
 
 @dataclass(slots=True, frozen=True)
@@ -222,15 +249,19 @@ class PasswordDialog:
     button1: str
     button2: str
     buttons: ButtonSelector
-    _bot: _Responder = field(repr=False, compare=False)
+    _responder: _Responder = field(repr=False, compare=False)
+
+    @property
+    def is_responded(self) -> bool:
+        return self._responder.is_responded
 
     def submit(self, text: str = "") -> None:
         """Send the OK response with the given password."""
-        self._bot.send_dialog_response(self.dialog_id, button=1, text=text)
+        self._responder.send_dialog_response(self.dialog_id, button=1, text=text)
 
     def cancel(self) -> None:
         """Send the Cancel response."""
-        self._bot.send_dialog_response(self.dialog_id, button=0)
+        self._responder.send_dialog_response(self.dialog_id, button=0)
 
 
 @dataclass(slots=True, frozen=True)
@@ -243,11 +274,15 @@ class ListDialog:
     button1: str
     button2: str
     rows: RowSelector[ListRow]
-    _bot: _Responder = field(repr=False, compare=False)
+    _responder: _Responder = field(repr=False, compare=False)
+
+    @property
+    def is_responded(self) -> bool:
+        return self._responder.is_responded
 
     def cancel(self) -> None:
         """Send the Cancel response."""
-        self._bot.send_dialog_response(self.dialog_id, button=0)
+        self._responder.send_dialog_response(self.dialog_id, button=0)
 
 
 @dataclass(slots=True, frozen=True)
@@ -260,11 +295,15 @@ class TablistDialog:
     button1: str
     button2: str
     rows: RowSelector[TablistRow]
-    _bot: _Responder = field(repr=False, compare=False)
+    _responder: _Responder = field(repr=False, compare=False)
+
+    @property
+    def is_responded(self) -> bool:
+        return self._responder.is_responded
 
     def cancel(self) -> None:
         """Send the Cancel response."""
-        self._bot.send_dialog_response(self.dialog_id, button=0)
+        self._responder.send_dialog_response(self.dialog_id, button=0)
 
 
 @dataclass(slots=True, frozen=True)
@@ -278,11 +317,15 @@ class TablistHeadersDialog:
     button2: str
     headers: tuple[str, ...]
     rows: RowSelector[TablistRow]
-    _bot: _Responder = field(repr=False, compare=False)
+    _responder: _Responder = field(repr=False, compare=False)
+
+    @property
+    def is_responded(self) -> bool:
+        return self._responder.is_responded
 
     def cancel(self) -> None:
         """Send the Cancel response."""
-        self._bot.send_dialog_response(self.dialog_id, button=0)
+        self._responder.send_dialog_response(self.dialog_id, button=0)
 
 
 type AnyDialog = (
@@ -299,9 +342,15 @@ type AnyDialog = (
 
 
 def _make_dialog(
-    did: int, style: int, title: str, btn1: str, btn2: str, body: str, bot: _Responder
+    did: int,
+    style: int,
+    title: str,
+    btn1: str,
+    btn2: str,
+    body: str,
+    responder: _Responder,
 ) -> AnyDialog:
-    buttons = _make_buttons(did, btn1, btn2, bot)
+    buttons = _make_buttons(did, btn1, btn2, responder)
 
     if style == 0:
         return MsgboxDialog(
@@ -311,7 +360,7 @@ def _make_dialog(
             button1=btn1,
             button2=btn2,
             buttons=buttons,
-            _bot=bot,
+            _responder=responder,
         )
     if style == 1:
         return InputDialog(
@@ -321,7 +370,7 @@ def _make_dialog(
             button1=btn1,
             button2=btn2,
             buttons=buttons,
-            _bot=bot,
+            _responder=responder,
         )
     if style == 3:
         return PasswordDialog(
@@ -331,12 +380,12 @@ def _make_dialog(
             button1=btn1,
             button2=btn2,
             buttons=buttons,
-            _bot=bot,
+            _responder=responder,
         )
     if style == 2:
         rows: RowSelector[ListRow] = RowSelector(
             [
-                ListRow(text=line, index=i, _dialog_id=did, _bot=bot)
+                ListRow(text=line, index=i, _dialog_id=did, _responder=responder)
                 for i, line in enumerate(ln for ln in body.split("\n") if ln)
             ]
         )
@@ -346,13 +395,16 @@ def _make_dialog(
             button1=btn1,
             button2=btn2,
             rows=rows,
-            _bot=bot,
+            _responder=responder,
         )
     if style == 4:
         rows_t: RowSelector[TablistRow] = RowSelector(
             [
                 TablistRow(
-                    columns=tuple(line.split("\t")), index=i, _dialog_id=did, _bot=bot
+                    columns=tuple(line.split("\t")),
+                    index=i,
+                    _dialog_id=did,
+                    _responder=responder,
                 )
                 for i, line in enumerate(ln for ln in body.split("\n") if ln)
             ]
@@ -363,7 +415,7 @@ def _make_dialog(
             button1=btn1,
             button2=btn2,
             rows=rows_t,
-            _bot=bot,
+            _responder=responder,
         )
     if style == 5:
         lines = [ln for ln in body.split("\n") if ln]
@@ -371,7 +423,10 @@ def _make_dialog(
         rows_th: RowSelector[TablistRow] = RowSelector(
             [
                 TablistRow(
-                    columns=tuple(line.split("\t")), index=i, _dialog_id=did, _bot=bot
+                    columns=tuple(line.split("\t")),
+                    index=i,
+                    _dialog_id=did,
+                    _responder=responder,
                 )
                 for i, line in enumerate(lines[1:])
             ]
@@ -383,7 +438,7 @@ def _make_dialog(
             button2=btn2,
             headers=headers,
             rows=rows_th,
-            _bot=bot,
+            _responder=responder,
         )
     # Unknown style — treat as msgbox
     return MsgboxDialog(
@@ -393,5 +448,5 @@ def _make_dialog(
         button1=btn1,
         button2=btn2,
         buttons=buttons,
-        _bot=bot,
+        _responder=responder,
     )

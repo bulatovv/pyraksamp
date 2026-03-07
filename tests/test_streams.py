@@ -7,7 +7,7 @@ from pyraksamp import SAMPBot
 from pyraksamp._bus import _EventBus
 from pyraksamp._dispatcher import _Dispatcher
 from pyraksamp._listener import _StreamListener
-from pyraksamp.dialogs import _make_dialog, InputDialog
+from pyraksamp.dialogs import _make_dialog, _Responder, InputDialog
 from pyraksamp.events import ChatMessage, PlayerJoin, ServerMessage
 from unittest.mock import MagicMock
 
@@ -242,8 +242,12 @@ def test_wait_for_dialog_type_filter():
         with patch("pyraksamp._SAMPClient"):
             bot = SAMPBot("host")
         bot_mock = MagicMock()
-        input_dlg = _make_dialog(1, 1, "Login", "OK", "", "", bot_mock)
-        msgbox_dlg = _make_dialog(2, 0, "Info", "OK", "", "body", bot_mock)
+        input_dlg = _make_dialog(
+            1, 1, "Login", "OK", "", "", _Responder(bot_mock.send_dialog_response)
+        )
+        msgbox_dlg = _make_dialog(
+            2, 0, "Info", "OK", "", "body", _Responder(bot_mock.send_dialog_response)
+        )
 
         async def producer():
             await asyncio.sleep(0)

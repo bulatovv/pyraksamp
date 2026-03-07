@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 from pyraksamp._bus import _EventBus
 from pyraksamp._bridge import _setup_bridge
-from pyraksamp.dialogs import _make_dialog, InputDialog
+from pyraksamp.dialogs import _make_dialog, _Responder, InputDialog
 from pyraksamp.events import PlayerJoin
 
 
@@ -59,7 +59,15 @@ def setup():
     mock_actions = MagicMock()
 
     def make_dialog(did, style, title, btn1, btn2, body):
-        return _make_dialog(did, style, title, btn1, btn2, body, mock_actions)
+        return _make_dialog(
+            did,
+            style,
+            title,
+            btn1,
+            btn2,
+            body,
+            _Responder(mock_actions.send_dialog_response),
+        )
 
     loop_calls = []
     mock_loop = SimpleNamespace(call_soon_threadsafe=lambda fn: loop_calls.append(fn))
@@ -134,7 +142,7 @@ def test_on_dialog_uses_make_dialog_factory():
         tag, dlg = q.get_nowait()
         assert tag == "dialog"
         assert isinstance(dlg, InputDialog)
-        assert dlg._bot is mock_actions
+        assert dlg._responder._fn is mock_actions.send_dialog_response
 
     asyncio.run(_inner())
 

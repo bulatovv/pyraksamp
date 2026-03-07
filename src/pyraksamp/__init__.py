@@ -53,6 +53,8 @@ from pyraksamp.dialogs import (
     ListRow,
     TablistRow,
     RowSelector,
+    DialogAlreadyRespondedError,
+    _Responder as _DialogResponder,
     _make_dialog,
 )
 from pyraksamp.events import (
@@ -155,6 +157,8 @@ __all__ = [
     "ListDialog",
     "TablistDialog",
     "TablistHeadersDialog",
+    # Dialog errors
+    "DialogAlreadyRespondedError",
     # Dialog helpers
     "Button",
     "ButtonSelector",
@@ -314,7 +318,13 @@ class SAMPBot:
         self._dispatcher = _Dispatcher(self._bus)
         self._actions = _Actions(self._client)
         self._make_dialog = lambda did, style, title, btn1, btn2, body: _make_dialog(
-            did, style, title, btn1, btn2, body, self._actions
+            did,
+            style,
+            title,
+            btn1,
+            btn2,
+            body,
+            _DialogResponder(self._actions.send_dialog_response),
         )
         self._listeners: list[_CallbackListener] = []
         self._started: bool = False
