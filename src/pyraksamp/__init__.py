@@ -319,10 +319,25 @@ class SAMPBot:
         password: str = "",
         gpci: str = "",
         server_encoding: str = "utf-8",
+        proxy: str | None = None,
     ):
         if not gpci:
             gpci = gen_gpci()
-        self._client = _SAMPClient(host, port, nickname, password, gpci)
+        proxy_host = proxy_port_int = proxy_username = proxy_password = None
+        if proxy:
+            from urllib.parse import urlparse
+            _p = urlparse(proxy)
+            proxy_host = _p.hostname
+            proxy_port_int = _p.port
+            proxy_username = _p.username or None
+            proxy_password = _p.password or None
+        self._client = _SAMPClient(
+            host, port, nickname, password, gpci,
+            proxy_host=proxy_host,
+            proxy_port=proxy_port_int,
+            proxy_username=proxy_username,
+            proxy_password=proxy_password,
+        )
         self._server_encoding = server_encoding
         self._bus = _EventBus()
         self._dispatcher = _Dispatcher(self._bus)

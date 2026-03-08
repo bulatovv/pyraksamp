@@ -2,6 +2,7 @@ use std::sync::Arc;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyraksamp_core::client::SampClient;
+use pyraksamp_core::socks5;
 
 // ── PySAMPClient ──────────────────────────────────────────────────────────────
 
@@ -119,10 +120,27 @@ fn cloned(py: Python<'_>, opt: &Option<Py<PyAny>>) -> Option<Py<PyAny>> {
 #[pymethods]
 impl PySAMPClient {
     #[new]
-    #[pyo3(signature = (host, port, nickname, password="", gpci=""))]
-    fn new(host: &str, port: u16, nickname: &str, password: &str, gpci: &str) -> Self {
+    #[pyo3(signature = (host, port, nickname, password="", gpci="", proxy_host=None, proxy_port=None, proxy_username=None, proxy_password=None))]
+    fn new(
+        host: &str,
+        port: u16,
+        nickname: &str,
+        password: &str,
+        gpci: &str,
+        proxy_host: Option<&str>,
+        proxy_port: Option<u16>,
+        proxy_username: Option<&str>,
+        proxy_password: Option<&str>,
+    ) -> Self {
+        let proxy = proxy_host.map(|h| socks5::ProxyConfig {
+            host: h.to_string(),
+            port: proxy_port.unwrap_or(1080),
+            auth: proxy_username.map(|u| {
+                (u.to_string(), proxy_password.unwrap_or("").to_string())
+            }),
+        });
         PySAMPClient {
-            inner:  SampClient::new(host, port, nickname, password, gpci),
+            inner:  SampClient::new(host, port, nickname, password, gpci, proxy),
             py_cbs: PyCbs::new(),
         }
     }
