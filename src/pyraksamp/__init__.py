@@ -385,17 +385,13 @@ class SAMPBot:
 
     # ── Connection lifecycle ───────────────────────────────────────────────────
 
-    async def start(self, timeout: float = 15.0) -> bool:
+    async def start(self, timeout: float = 15.0) -> None:
         """Connect and start the background receive/keepalive thread.
 
         Parameters
         ----------
         timeout
             Maximum seconds to wait for the connection to be accepted.
-
-        Returns
-        -------
-            ``True`` on success.
 
         Raises
         ------
@@ -441,7 +437,7 @@ class SAMPBot:
         self._started = True
         for listener in self._listeners:
             listener.start()
-        return await loop.run_in_executor(None, lambda: self._client.start(timeout))
+        await loop.run_in_executor(None, lambda: self._client.start(timeout))
 
     def disconnect(self) -> None:
         """Send disconnect notification and stop the receive loop."""

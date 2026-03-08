@@ -169,7 +169,7 @@ impl PySAMPClient {
     }
 
     #[pyo3(signature = (timeout=15.0))]
-    fn start(&self, py: Python, timeout: f64) -> PyResult<bool> {
+    fn start(&self, py: Python, timeout: f64) -> PyResult<()> {
         use pyraksamp_core::client::ConnectError;
         let inner = Arc::clone(&self.inner);
         if let Err(e) = py.allow_threads(move || inner.connect(timeout)) {
@@ -189,7 +189,7 @@ impl PySAMPClient {
         std::thread::Builder::new()
             .name(format!("samp-recv-{}", self.inner.player_id()))
             .spawn(move || inner.run())
-            .map(|_| true)
+            .map(|_| ())
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(
                 format!("failed to spawn recv thread: {e}")
             ))
