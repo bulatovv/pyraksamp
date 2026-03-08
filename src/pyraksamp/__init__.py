@@ -375,6 +375,10 @@ class SAMPBot:
             self._register_listener(
                 _CallbackListener(self._dispatcher, tag, fn, extract=lambda e: e[1:])
             )
+        if not getattr(self, "_atexit_registered", False):
+            import atexit
+            atexit.register(self._client.stop)
+            self._atexit_registered = True
         self._started = True
         for listener in self._listeners:
             listener.start()
