@@ -395,8 +395,7 @@ class SAMPBot:
 
         Returns
         -------
-            ``True`` on success.  Returns ``False`` only if the recv thread
-            could not be spawned (extremely unlikely).
+            ``True`` on success.
 
         Raises
         ------

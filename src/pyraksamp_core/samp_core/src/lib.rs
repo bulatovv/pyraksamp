@@ -186,10 +186,13 @@ impl PySAMPClient {
             });
         }
         let inner = Arc::clone(&self.inner);
-        Ok(std::thread::Builder::new()
+        std::thread::Builder::new()
             .name(format!("samp-recv-{}", self.inner.player_id()))
             .spawn(move || inner.run())
-            .is_ok())
+            .map(|_| true)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(
+                format!("failed to spawn recv thread: {e}")
+            ))
     }
 
     fn stop(&self)       { self.inner.stop(); }
