@@ -568,7 +568,7 @@ const H_HELLO_W:   &[u8] = &[0x8E, 0x9F, 0x02, 0x52, 0x8E, 0xAE, 0x46, 0x64, 0xE
         }
     }
     #[test] fn float_roundtrip() {
-        for v in [0.0f32, 1.0, -1.0, 3.14159, f32::MAX, f32::MIN_POSITIVE] {
+        for v in [0.0f32, 1.0, -1.0, std::f32::consts::PI, f32::MAX, f32::MIN_POSITIVE] {
             let mut bs = BitStream::new(); bs.write_float_le(v);
             assert_eq!(BitStream::from_bytes(bs.as_bytes()).read_float_le().unwrap(), v);
         }

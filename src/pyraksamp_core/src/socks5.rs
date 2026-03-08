@@ -55,14 +55,14 @@ pub fn udp_associate(proxy: &ProxyConfig) -> io::Result<(SocketAddr, TcpStream)>
     stream.read_exact(&mut resp)?;
 
     if resp[0] != SOCKS_VER {
-        return Err(io::Error::new(io::ErrorKind::Other, "unexpected SOCKS version in method reply"));
+        return Err(io::Error::other("unexpected SOCKS version in method reply"));
     }
     match resp[1] {
         AUTH_NO_ACCEPTABLE => {
             return Err(io::Error::new(io::ErrorKind::PermissionDenied, "proxy rejected all auth methods"));
         }
         m if m != method => {
-            return Err(io::Error::new(io::ErrorKind::Other, "proxy chose unexpected auth method"));
+            return Err(io::Error::other("proxy chose unexpected auth method"));
         }
         _ => {}
     }
@@ -97,11 +97,10 @@ pub fn udp_associate(proxy: &ProxyConfig) -> io::Result<(SocketAddr, TcpStream)>
     stream.read_exact(&mut hdr)?;
 
     if hdr[0] != SOCKS_VER {
-        return Err(io::Error::new(io::ErrorKind::Other, "unexpected SOCKS version in reply"));
+        return Err(io::Error::other("unexpected SOCKS version in reply"));
     }
     if hdr[1] != REP_SUCCESS {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
+        return Err(io::Error::other(
             format!("SOCKS5 UDP ASSOCIATE failed: reply code {:#04x}", hdr[1]),
         ));
     }
@@ -138,8 +137,7 @@ pub fn udp_associate(proxy: &ProxyConfig) -> io::Result<(SocketAddr, TcpStream)>
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "cannot resolve relay host"))?
         }
         other => {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 format!("unsupported relay address type: {:#04x}", other),
             ));
         }
