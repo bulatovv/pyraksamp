@@ -330,7 +330,7 @@ def test_send_dialog_response_delegates():
         bot = SAMPBot("host")
         bot.send_dialog_response(5, 1, 2, "text")
         MockClient.return_value.send_dialog_response.assert_called_once_with(
-            5, 1, 2, "text"
+            5, 1, 2, b"text"
         )
 
 

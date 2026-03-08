@@ -210,6 +210,7 @@ pub struct SampClient {
     pub connected: AtomicBool,
     pub running:   AtomicBool,
     spawned:       AtomicBool,
+    spectating:    AtomicBool,
     send_msg_num:  AtomicU16,
     ordering_idx:  AtomicU16,
 
@@ -238,6 +239,7 @@ impl SampClient {
             connected:    AtomicBool::new(false),
             running:      AtomicBool::new(false),
             spawned:      AtomicBool::new(false),
+            spectating:   AtomicBool::new(false),
             send_msg_num: AtomicU16::new(0),
             ordering_idx: AtomicU16::new(0),
             player_id:    Mutex::new(-1),
@@ -497,11 +499,14 @@ impl SampClient {
 
                 RPC_REQUEST_CLASS => {
                     // Server approved class selection (u8 outcome + PLAYER_SPAWN_INFO).
-                    // Spawn immediately — mirrors sampSpawn() in the reference.
+                    // Skip spawn if the server put us in spectating mode — it will
+                    // call TogglePlayerSpectating(false) when ready for us to spawn.
                     let _outcome = bs.read_uint8().ok()?;
-                    self.send_rpc(RPC_REQUEST_SPAWN, &[], REL_RELIABLE);
-                    self.send_rpc(RPC_SPAWN, &[], REL_RELIABLE);
-                    self.spawned.store(true, Ordering::Relaxed);
+                    if !self.spectating.load(Ordering::Relaxed) {
+                        self.send_rpc(RPC_REQUEST_SPAWN, &[], REL_RELIABLE);
+                        self.send_rpc(RPC_SPAWN, &[], REL_RELIABLE);
+                        self.spawned.store(true, Ordering::Relaxed);
+                    }
                 }
 
                 RPC_CONNECTION_REJ => {
@@ -698,6 +703,13 @@ impl SampClient {
 
                 RPC_TOGGLE_SPECTATING => {
                     let spec = bs.read_uint32_le().ok()?;
+                    let was_spectating = self.spectating.swap(spec != 0, Ordering::Relaxed);
+                    // Mirror reference: if transitioning OUT of spectating and not yet spawned → spawn.
+                    if was_spectating && spec == 0 && !self.spawned.load(Ordering::Relaxed) {
+                        self.send_rpc(RPC_REQUEST_SPAWN, &[], REL_RELIABLE);
+                        self.send_rpc(RPC_SPAWN, &[], REL_RELIABLE);
+                        self.spawned.store(true, Ordering::Relaxed);
+                    }
                     fire!(self.callbacks, on_toggle_spectating, spec != 0);
                 }
 
@@ -1017,6 +1029,7 @@ impl SampClient {
     pub fn disconnect(&self) {
         self.running.store(false, Ordering::Relaxed);
         self.spawned.store(false, Ordering::Relaxed);
+        self.spectating.store(false, Ordering::Relaxed);
         let disc = vec![ID_DISCONNECTION_NOTIFICATION, 0];
         self.send_reliability_pkt(&disc, REL_RELIABLE, 0, 0);
         std::thread::sleep(Duration::from_millis(100));
@@ -1027,7 +1040,7 @@ impl SampClient {
 
     // ─── Send helpers ─────────────────────────────────────────────────────────
 
-    pub fn send_dialog_response(&self, dialog_id: u16, button: u8, list_item: u16, text: &str) {
+    pub fn send_dialog_response(&self, dialog_id: u16, button: u8, list_item: u16, text: &[u8]) {
         let mut bs = BitStream::new();
         bs.write_uint16_le(dialog_id);
         bs.write_uint8(button);
@@ -1035,7 +1048,7 @@ impl SampClient {
         let rlen = text.len().min(255) as u8;
         bs.write_uint8(rlen);
         if rlen > 0 {
-            bs.write_aligned_bytes(&text.as_bytes()[..rlen as usize]);
+            bs.write_aligned_bytes(&text[..rlen as usize]);
         }
         self.send_rpc(RPC_DIALOG_RESPONSE, bs.as_bytes(), REL_RELIABLE_ORDERED);
     }
@@ -1060,11 +1073,11 @@ impl SampClient {
         self.send_rpc(RPC_EXIT_VEHICLE, bs.as_bytes(), REL_RELIABLE_SEQUENCED);
     }
 
-    pub fn send_command(&self, text: &str) {
+    pub fn send_command(&self, text: &[u8]) {
         let mut bs = BitStream::new();
         bs.write_uint32_le(text.len() as u32);
         if !text.is_empty() {
-            bs.write_aligned_bytes(text.as_bytes());
+            bs.write_aligned_bytes(text);
         }
         self.send_rpc(RPC_SERVER_COMMAND, bs.as_bytes(), REL_RELIABLE);
     }

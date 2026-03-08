@@ -141,9 +141,9 @@ impl PySAMPClient {
 
     // ── Send helpers ──────────────────────────────────────────────────────────
 
-    #[pyo3(signature = (dialog_id, button, list_item=0, text=""))]
-    fn send_dialog_response(&self, dialog_id: u16, button: u8, list_item: u16, text: &str) {
-        self.inner.send_dialog_response(dialog_id, button, list_item, text);
+    #[pyo3(signature = (dialog_id, button, list_item=0, text=None))]
+    fn send_dialog_response(&self, dialog_id: u16, button: u8, list_item: u16, text: Option<&[u8]>) {
+        self.inner.send_dialog_response(dialog_id, button, list_item, text.unwrap_or(b""));
     }
 
     #[pyo3(signature = (weapon_id=0, killer_id=0xFFFF))]
@@ -157,7 +157,7 @@ impl PySAMPClient {
     }
 
     fn send_exit_vehicle(&self, vehicle_id: u16) { self.inner.send_exit_vehicle(vehicle_id); }
-    fn send_command(&self, text: &str)           { self.inner.send_command(text); }
+    fn send_command(&self, text: &[u8])          { self.inner.send_command(text); }
 
     // ── Callbacks ─────────────────────────────────────────────────────────────
 

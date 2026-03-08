@@ -91,6 +91,7 @@ def _setup_bridge(
     ):
         def dec(b):
             return b.decode(encoding, errors="replace")
+
         evt = make_dialog(
             did, style, dec(raw_title), dec(raw_btn1), dec(raw_btn2), dec(raw_body)
         )

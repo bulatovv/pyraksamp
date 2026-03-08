@@ -326,7 +326,7 @@ class SAMPBot:
         self._server_encoding = server_encoding
         self._bus = _EventBus()
         self._dispatcher = _Dispatcher(self._bus)
-        self._actions = _Actions(self._client)
+        self._actions = _Actions(self._client, server_encoding)
         self._make_dialog = lambda did, style, title, btn1, btn2, body: _make_dialog(
             did,
             style,

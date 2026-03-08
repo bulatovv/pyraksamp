@@ -64,10 +64,19 @@ def test_send_chat_truncates_to_144():
     assert len(body) == 144
 
 
-def test_send_chat_replaces_non_ascii():
+def test_send_chat_encodes_utf8_by_default():
     client = make_client()
     actions = _Actions(client)
-    actions.send_chat("caf\u00e9")  # é → ?
+    actions.send_chat("caf\u00e9")  # é → UTF-8 \xc3\xa9
+    _, payload, _ = client.send_rpc.call_args.args
+    body = payload[1:]
+    assert body == "caf\u00e9".encode("utf-8")
+
+
+def test_send_chat_uses_server_encoding():
+    client = make_client()
+    actions = _Actions(client, encoding="ascii")
+    actions.send_chat("caf\u00e9")  # é → ? with ascii+replace
     _, payload, _ = client.send_rpc.call_args.args
     body = payload[1:]
     assert body == b"caf?"
@@ -80,14 +89,14 @@ def test_send_dialog_response():
     client = make_client()
     actions = _Actions(client)
     actions.send_dialog_response(5, 1, 2, "text")
-    client.send_dialog_response.assert_called_once_with(5, 1, 2, "text")
+    client.send_dialog_response.assert_called_once_with(5, 1, 2, b"text")
 
 
 def test_send_dialog_response_defaults():
     client = make_client()
     actions = _Actions(client)
     actions.send_dialog_response(5, 0)
-    client.send_dialog_response.assert_called_once_with(5, 0, 0, "")
+    client.send_dialog_response.assert_called_once_with(5, 0, 0, b"")
 
 
 # ── send_death ────────────────────────────────────────────────────────────────
@@ -135,4 +144,4 @@ def test_send_command():
     client = make_client()
     actions = _Actions(client)
     actions.send_command("/stats")
-    client.send_command.assert_called_once_with("/stats")
+    client.send_command.assert_called_once_with(b"/stats")

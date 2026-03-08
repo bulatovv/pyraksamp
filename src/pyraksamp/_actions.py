@@ -11,8 +11,12 @@ RELIABLE = _core.RELIABLE
 class _Actions:
     """Outbound game actions backed by _SAMPClient."""
 
-    def __init__(self, client: _SAMPClient) -> None:
+    def __init__(self, client: _SAMPClient, encoding: str = "utf-8") -> None:
         self._client = client
+        self._encoding = encoding
+
+    def _enc(self, text: str, max_bytes: int) -> bytes:
+        return text.encode(self._encoding, errors="replace")[:max_bytes]
 
     def send_rpc(
         self, rpc_id: int, data: bytes = b"", reliability: int = RELIABLE
@@ -32,14 +36,16 @@ class _Actions:
 
     def send_chat(self, message: str) -> None:
         """Send a public chat message (RPC 101)."""
-        msg = message.encode("ascii", errors="replace")[:144]
+        msg = self._enc(message, 144)
         self.send_rpc(_core.RPC_CHAT, struct.pack("B", len(msg)) + msg)
 
     def send_dialog_response(
         self, dialog_id: int, button: int, list_item: int = 0, text: str = ""
     ) -> None:
         """Respond to a dialog (SendDialogResponse)."""
-        self._client.send_dialog_response(dialog_id, button, list_item, text)
+        self._client.send_dialog_response(
+            dialog_id, button, list_item, self._enc(text, 255)
+        )
 
     def send_death(self, weapon_id: int = 0, killer_id: int = 0xFFFF) -> None:
         """Send a death notification (SendDeathMessage)."""
@@ -55,7 +61,7 @@ class _Actions:
 
     def send_command(self, text: str) -> None:
         """Send a slash command (e.g. '/stats') to the server (RPC 50)."""
-        self._client.send_command(text)
+        self._client.send_command(self._enc(text, 100))
 
     def click_textdraw(self, textdraw_id: int) -> None:
         """Send SelectTextDraw RPC (83) for the given textdraw ID."""
