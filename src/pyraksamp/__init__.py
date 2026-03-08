@@ -34,6 +34,18 @@ from collections.abc import Callable
 from typing import Any, overload
 
 from pyraksamp import _core
+from pyraksamp._core import (
+    SAMPConnectionError,
+    SAMPBanned,
+    SAMPInvalidPassword,
+    SAMPServerFull,
+    SAMPRejected,
+    SAMPHandshakeTimeout,
+    SAMPConnectionTimeout,
+    SAMPHostResolutionError,
+    SAMPProxyError,
+    SAMPSocketError,
+)
 from pyraksamp._actions import _Actions
 from pyraksamp._bridge import _setup_bridge
 from pyraksamp._bus import _EventBus
@@ -165,6 +177,17 @@ __all__ = [
     "ListDialog",
     "TablistDialog",
     "TablistHeadersDialog",
+    # Connection exceptions
+    "SAMPConnectionError",
+    "SAMPBanned",
+    "SAMPInvalidPassword",
+    "SAMPServerFull",
+    "SAMPRejected",
+    "SAMPHandshakeTimeout",
+    "SAMPConnectionTimeout",
+    "SAMPHostResolutionError",
+    "SAMPProxyError",
+    "SAMPSocketError",
     # Dialog errors
     "DialogAlreadyRespondedError",
     # Dialog helpers
@@ -372,7 +395,29 @@ class SAMPBot:
 
         Returns
         -------
-            ``True`` if connected, ``False`` on timeout or rejection.
+            ``True`` on success.  Returns ``False`` only if the recv thread
+            could not be spawned (extremely unlikely).
+
+        Raises
+        ------
+        SAMPBanned
+            The client is banned from the server.
+        SAMPInvalidPassword
+            Wrong server password.
+        SAMPServerFull
+            Server has no free player slots.
+        SAMPRejected
+            Server actively refused the connection attempt.
+        SAMPHandshakeTimeout
+            Server did not complete the open-connection handshake in time.
+        SAMPConnectionTimeout
+            Server did not accept the connection request in time.
+        SAMPHostResolutionError
+            Server hostname could not be resolved.
+        SAMPProxyError
+            SOCKS5 proxy handshake failed.
+        SAMPSocketError
+            Could not bind the local UDP socket.
         """
         loop = asyncio.get_running_loop()
         _setup_bridge(

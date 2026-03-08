@@ -4,6 +4,29 @@ use pyo3::types::PyBytes;
 use pyraksamp_core::client::SampClient;
 use pyraksamp_core::socks5;
 
+// ── Connection exceptions ─────────────────────────────────────────────────────
+
+pyo3::create_exception!(_core, SAMPConnectionError, pyo3::exceptions::PyException,
+    "Base class for all SA:MP connection errors.");
+pyo3::create_exception!(_core, SAMPBanned, SAMPConnectionError,
+    "The client is banned from the server.");
+pyo3::create_exception!(_core, SAMPInvalidPassword, SAMPConnectionError,
+    "Wrong server password.");
+pyo3::create_exception!(_core, SAMPServerFull, SAMPConnectionError,
+    "Server has no free player slots.");
+pyo3::create_exception!(_core, SAMPRejected, SAMPConnectionError,
+    "Server actively refused the connection attempt.");
+pyo3::create_exception!(_core, SAMPHandshakeTimeout, SAMPConnectionError,
+    "Server did not complete the open-connection handshake in time.");
+pyo3::create_exception!(_core, SAMPConnectionTimeout, SAMPConnectionError,
+    "Server did not accept the connection request in time.");
+pyo3::create_exception!(_core, SAMPHostResolutionError, SAMPConnectionError,
+    "Server hostname could not be resolved.");
+pyo3::create_exception!(_core, SAMPProxyError, SAMPConnectionError,
+    "SOCKS5 proxy handshake failed.");
+pyo3::create_exception!(_core, SAMPSocketError, SAMPConnectionError,
+    "Could not bind the local UDP socket.");
+
 // ── PySAMPClient ──────────────────────────────────────────────────────────────
 
 // Stores original Python callables for getters.
@@ -149,13 +172,18 @@ impl PySAMPClient {
     fn start(&self, py: Python, timeout: f64) -> PyResult<bool> {
         use pyraksamp_core::client::ConnectError;
         let inner = Arc::clone(&self.inner);
-        match py.allow_threads(move || inner.connect(timeout)) {
-            Ok(()) => {}
-            Err(ConnectError::Rejected
-                | ConnectError::Banned
-                | ConnectError::InvalidPassword
-                | ConnectError::NoFreeSlots) => return Ok(false),
-            Err(e) => return Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
+        if let Err(e) = py.allow_threads(move || inner.connect(timeout)) {
+            return Err(match e {
+                ConnectError::Banned            => SAMPBanned::new_err("banned from server"),
+                ConnectError::InvalidPassword   => SAMPInvalidPassword::new_err("invalid server password"),
+                ConnectError::NoFreeSlots       => SAMPServerFull::new_err("server is full"),
+                ConnectError::Rejected          => SAMPRejected::new_err("connection attempt failed"),
+                ConnectError::HandshakeTimeout  => SAMPHandshakeTimeout::new_err("connection handshake timed out"),
+                ConnectError::ConnectionTimeout => SAMPConnectionTimeout::new_err("connection request timed out"),
+                ConnectError::HostResolution    => SAMPHostResolutionError::new_err("could not resolve server host"),
+                ConnectError::Proxy(err)        => SAMPProxyError::new_err(err.to_string()),
+                ConnectError::SocketBind(err)   => SAMPSocketError::new_err(err.to_string()),
+            });
         }
         let inner = Arc::clone(&self.inner);
         Ok(std::thread::Builder::new()
@@ -553,6 +581,18 @@ impl PySAMPClient {
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySAMPClient>()?;
+
+    // ── Connection exceptions ──────────────────────────────────────────────────
+    m.add("SAMPConnectionError",   m.py().get_type::<SAMPConnectionError>())?;
+    m.add("SAMPBanned",            m.py().get_type::<SAMPBanned>())?;
+    m.add("SAMPInvalidPassword",   m.py().get_type::<SAMPInvalidPassword>())?;
+    m.add("SAMPServerFull",        m.py().get_type::<SAMPServerFull>())?;
+    m.add("SAMPRejected",          m.py().get_type::<SAMPRejected>())?;
+    m.add("SAMPHandshakeTimeout",  m.py().get_type::<SAMPHandshakeTimeout>())?;
+    m.add("SAMPConnectionTimeout", m.py().get_type::<SAMPConnectionTimeout>())?;
+    m.add("SAMPHostResolutionError", m.py().get_type::<SAMPHostResolutionError>())?;
+    m.add("SAMPProxyError",        m.py().get_type::<SAMPProxyError>())?;
+    m.add("SAMPSocketError",       m.py().get_type::<SAMPSocketError>())?;
 
     // Reliability constants
     m.add("UNRELIABLE",           6u8)?;
