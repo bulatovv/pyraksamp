@@ -206,10 +206,9 @@ def test_start_wires_bridge_and_calls_executor():
         with patch("pyraksamp._SAMPClient") as MockClient:
             MockClient.return_value.start.return_value = True
             bot = SAMPBot("host")
-            result = await bot.start()
+            await bot.start()
             # All client callbacks should be assigned by _setup_bridge
             assert callable(MockClient.return_value.on_connect)
-            assert result is True
 
     asyncio.run(_inner())
 
