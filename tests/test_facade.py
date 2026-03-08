@@ -334,6 +334,36 @@ def test_send_dialog_response_delegates():
         )
 
 
+# ── atexit registration ───────────────────────────────────────────────────────
+
+
+def test_start_registers_atexit_handler():
+    async def _inner():
+        with patch("pyraksamp._SAMPClient") as MockClient, patch(
+            "atexit.register"
+        ) as mock_register:
+            MockClient.return_value.start.return_value = True
+            bot = SAMPBot("host")
+            await bot.start()
+            mock_register.assert_called_once_with(MockClient.return_value.stop)
+
+    asyncio.run(_inner())
+
+
+def test_start_registers_atexit_only_once():
+    async def _inner():
+        with patch("pyraksamp._SAMPClient") as MockClient, patch(
+            "atexit.register"
+        ) as mock_register:
+            MockClient.return_value.start.return_value = True
+            bot = SAMPBot("host")
+            await bot.start()
+            await bot.start()
+            mock_register.assert_called_once()
+
+    asyncio.run(_inner())
+
+
 # ── SAMPClient alias ──────────────────────────────────────────────────────────
 
 
