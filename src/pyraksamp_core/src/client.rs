@@ -1,9 +1,12 @@
 //! SA:MP 0.3.7 pure-Rust client — port of client.cpp.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::time::{Duration, Instant};
+use std::{fmt, io};
+
+use crate::socks5;
 
 use crate::bitstream::BitStream;
 use crate::encrypt::{encrypt as samp_encrypt, auth_response as samp_auth_response};
@@ -186,11 +189,57 @@ macro_rules! fire {
     }};
 }
 
+// ── Connect errors ────────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub enum ConnectError {
+    /// Server hostname could not be resolved (or is not IPv4).
+    HostResolution,
+    /// Could not bind the local UDP socket.
+    SocketBind(io::Error),
+    /// SOCKS5 proxy handshake failed.
+    Proxy(io::Error),
+    /// Server did not complete the open-connection handshake in time.
+    HandshakeTimeout,
+    /// Server did not accept the connection request in time.
+    ConnectionTimeout,
+    /// Server actively refused the connection attempt.
+    Rejected,
+    /// Client is banned from the server.
+    Banned,
+    /// Wrong server password.
+    InvalidPassword,
+    /// Server has no free player slots.
+    NoFreeSlots,
+}
+
+impl fmt::Display for ConnectError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConnectError::HostResolution    => write!(f, "could not resolve server host"),
+            ConnectError::SocketBind(e)     => write!(f, "failed to bind UDP socket: {e}"),
+            ConnectError::Proxy(e)          => write!(f, "SOCKS5 proxy error: {e}"),
+            ConnectError::HandshakeTimeout  => write!(f, "connection handshake timed out"),
+            ConnectError::ConnectionTimeout => write!(f, "connection request timed out"),
+            ConnectError::Rejected          => write!(f, "connection attempt failed"),
+            ConnectError::Banned            => write!(f, "banned from server"),
+            ConnectError::InvalidPassword   => write!(f, "invalid server password"),
+            ConnectError::NoFreeSlots       => write!(f, "server is full"),
+        }
+    }
+}
+
+impl std::error::Error for ConnectError {}
+
 // ── Network helpers ───────────────────────────────────────────────────────────
 
 struct NetState {
     sock:        Arc<UdpSocket>,
     server_addr: SocketAddr,
+    /// SOCKS5: relay address to send UDP datagrams to.
+    relay_addr:  Option<SocketAddr>,
+    /// SOCKS5: TCP control connection.  Must stay alive for the relay to work.
+    _tcp_ctrl:   Option<TcpStream>,
 }
 
 // ── SampClient ────────────────────────────────────────────────────────────────
@@ -202,6 +251,7 @@ pub struct SampClient {
     password: String,
     gpci:     String,
     host:     String,
+    proxy:    Option<socks5::ProxyConfig>,
 
     // Network (set once in connect())
     net: Mutex<Option<NetState>>,
@@ -223,7 +273,7 @@ pub struct SampClient {
 }
 
 impl SampClient {
-    pub fn new(host: &str, port: u16, nickname: &str, password: &str, gpci: &str) -> Arc<Self> {
+    pub fn new(host: &str, port: u16, nickname: &str, password: &str, gpci: &str, proxy: Option<socks5::ProxyConfig>) -> Arc<Self> {
         let gpci = if gpci.is_empty() {
             DEFAULT_GPCI.to_string()
         } else {
@@ -235,6 +285,7 @@ impl SampClient {
             nickname:     nickname.to_string(),
             password:     password.to_string(),
             gpci,
+            proxy,
             net:          Mutex::new(None),
             connected:    AtomicBool::new(false),
             running:      AtomicBool::new(false),
@@ -252,18 +303,42 @@ impl SampClient {
     pub fn is_connected(&self) -> bool { self.connected.load(Ordering::Relaxed) }
     pub fn player_id(&self)    -> i32  { *self.player_id.lock().unwrap() }
 
+    /// Extract `(socket, server_ipv4, relay_ipv4)` from the active `NetState`.
+    ///
+    /// Returns `None` when no connection is active or the server address is not IPv4.
+    /// All three callers — `do_handshake`, `do_connection_request`, and `run` — use
+    /// this single helper so the extraction logic lives in exactly one place.
+    fn net_recv_params(&self) -> Option<(Arc<UdpSocket>, Ipv4Addr, Option<Ipv4Addr>)> {
+        let guard = self.net.lock().unwrap();
+        let ns = guard.as_ref()?;
+        let server_v4 = match ns.server_addr.ip() {
+            IpAddr::V4(v) => v,
+            _ => return None,
+        };
+        let relay_v4 = ns.relay_addr.and_then(|a| match a.ip() {
+            IpAddr::V4(v) => Some(v),
+            _ => None,
+        });
+        Some((Arc::clone(&ns.sock), server_v4, relay_v4))
+    }
+
     // ─── Internal send primitives ─────────────────────────────────────────────
 
     fn send_encrypted(&self, data: &[u8]) {
-        let (sock, addr) = {
+        let (sock, addr, relay_addr) = {
             let guard = self.net.lock().unwrap();
             match guard.as_ref() {
-                Some(ns) => (Arc::clone(&ns.sock), ns.server_addr),
+                Some(ns) => (Arc::clone(&ns.sock), ns.server_addr, ns.relay_addr),
                 None => return,
             }
         };
         let enc = samp_encrypt(data, self.port);
-        let _ = sock.send_to(&enc, addr);
+        if let Some(relay) = relay_addr {
+            let wrapped = socks5::wrap_packet(&enc, addr);
+            let _ = sock.send_to(&wrapped, relay);
+        } else {
+            let _ = sock.send_to(&enc, addr);
+        }
     }
 
     fn send_reliability_pkt(&self, data: &[u8], rel: u8, oc: u8, mut oi: u16) {
@@ -304,16 +379,18 @@ impl SampClient {
 
     // ─── Handshake phase ──────────────────────────────────────────────────────
 
-    fn do_handshake(&self, sock: &UdpSocket, server_v4: Ipv4Addr, timeout: Duration) -> bool {
+    fn do_handshake(&self, timeout: Duration) -> Result<(), ConnectError> {
+        let (sock, server_v4, relay_v4) = self.net_recv_params()
+            .ok_or(ConnectError::HostResolution)?;
+
         let req = [ID_OPEN_CONNECTION_REQUEST, 0, 0];
-        let enc = samp_encrypt(&req, self.port);
-        let _ = sock.send_to(&enc, SocketAddr::from((server_v4, self.port)));
+        self.send_encrypted(&req);
 
         let deadline = Instant::now() + timeout;
         let mut buf = [0u8; 256];
         loop {
-            match recv_deadline(sock, &mut buf, server_v4, deadline) {
-                None => return false,
+            match recv_deadline(&sock, &mut buf, server_v4, deadline, relay_v4) {
+                None => return Err(ConnectError::HandshakeTimeout),
                 Some(n) => {
                     if n >= 3 && buf[0] == ID_OPEN_CONNECTION_COOKIE {
                         let lo = buf[1];
@@ -323,12 +400,11 @@ impl SampClient {
                             lo ^ (NETCODE_CONNCOOKIELULZ & 0xFF) as u8,
                             hi ^ ((NETCODE_CONNCOOKIELULZ >> 8) & 0xFF) as u8,
                         ];
-                        let enc = samp_encrypt(&reply, self.port);
-                        let _ = sock.send_to(&enc, SocketAddr::from((server_v4, self.port)));
+                        self.send_encrypted(&reply);
                         continue;
                     }
                     if n >= 1 && buf[0] == ID_OPEN_CONNECTION_REPLY {
-                        return true;
+                        return Ok(());
                     }
                 }
             }
@@ -422,7 +498,10 @@ impl SampClient {
         self.send_reliability_pkt(rpc_bs.as_bytes(), REL_RELIABLE, 0, 0);
     }
 
-    fn do_connection_request(&self, sock: &UdpSocket, server_v4: Ipv4Addr, timeout: Duration) -> bool {
+    fn do_connection_request(&self, timeout: Duration) -> Result<(), ConnectError> {
+        let (sock, server_v4, relay_v4) = self.net_recv_params()
+            .ok_or(ConnectError::HostResolution)?;
+
         let mut cr = vec![ID_CONNECTION_REQUEST];
         if !self.password.is_empty() {
             cr.extend_from_slice(self.password.as_bytes());
@@ -434,8 +513,8 @@ impl SampClient {
         let mut split_buf = SplitBuffer::new();
 
         loop {
-            let n = match recv_deadline_cap(sock, &mut buf, server_v4, deadline, Duration::from_millis(500)) {
-                None => return false,
+            let n = match recv_deadline_cap(&sock, &mut buf, server_v4, deadline, Duration::from_millis(500), relay_v4) {
+                None => return Err(ConnectError::ConnectionTimeout),
                 Some(n) => n,
             };
 
@@ -467,15 +546,12 @@ impl SampClient {
                     id if id == ID_CONNECTION_REQUEST_ACCEPTED => {
                         self.handle_connection_accepted_raw(&pkt.data);
                         self.connected.store(true, Ordering::Relaxed);
-                        return true;
+                        return Ok(());
                     }
-                    id if id == ID_CONNECTION_BANNED
-                        || id == ID_INVALID_PASSWORD
-                        || id == ID_NO_FREE_INCOMING_CONNECTIONS
-                        || id == ID_CONNECTION_ATTEMPT_FAILED =>
-                    {
-                        return false;
-                    }
+                    id if id == ID_CONNECTION_BANNED            => return Err(ConnectError::Banned),
+                    id if id == ID_INVALID_PASSWORD             => return Err(ConnectError::InvalidPassword),
+                    id if id == ID_NO_FREE_INCOMING_CONNECTIONS => return Err(ConnectError::NoFreeSlots),
+                    id if id == ID_CONNECTION_ATTEMPT_FAILED    => return Err(ConnectError::Rejected),
                     _ => {}
                 }
             }
@@ -913,52 +989,44 @@ impl SampClient {
 
     // ─── Public API ───────────────────────────────────────────────────────────
 
-    pub fn connect(&self, timeout_sec: f64) -> bool {
-        let server_v4 = match resolve_host(&self.host, self.port) {
-            Some(v) => v,
-            None => return false,
-        };
+    pub fn connect(&self, timeout_sec: f64) -> Result<(), ConnectError> {
+        let server_v4 = resolve_host(&self.host, self.port)
+            .ok_or(ConnectError::HostResolution)?;
 
-        let sock = match UdpSocket::bind("0.0.0.0:0") {
-            Ok(s) => s,
-            Err(_) => return false,
+        let sock = UdpSocket::bind("0.0.0.0:0")
+            .map_err(ConnectError::SocketBind)?;
+
+        // If a SOCKS5 proxy is configured, negotiate UDP ASSOCIATE now.
+        let (relay_addr, tcp_ctrl) = match self.proxy.as_ref() {
+            Some(proxy) => {
+                let (relay, ctrl) = socks5::udp_associate(proxy).map_err(ConnectError::Proxy)?;
+                (Some(relay), Some(ctrl))
+            }
+            None => (None, None),
         };
 
         {
             let mut guard = self.net.lock().unwrap();
             *guard = Some(NetState {
-                sock: Arc::new(sock),
+                sock:        Arc::new(sock),
                 server_addr: SocketAddr::from((server_v4, self.port)),
+                relay_addr,
+                _tcp_ctrl:   tcp_ctrl,
             });
         }
 
-        let (sock_arc, _) = {
-            let guard = self.net.lock().unwrap();
-            let ns = guard.as_ref().unwrap();
-            (Arc::clone(&ns.sock), ns.server_addr)
-        };
-
         let half = Duration::from_secs_f64(timeout_sec / 2.0);
-        if !self.do_handshake(&sock_arc, server_v4, half) { return false; }
-        if !self.do_connection_request(&sock_arc, server_v4, half) { return false; }
-        self.connected.load(Ordering::Relaxed)
+        self.do_handshake(half)?;
+        self.do_connection_request(half)?;
+        Ok(())
     }
 
     pub fn run(&self) {
         self.running.store(true, Ordering::Relaxed);
 
-        let (sock, server_v4) = {
-            let guard = self.net.lock().unwrap();
-            match guard.as_ref() {
-                Some(ns) => {
-                    let v4 = match ns.server_addr.ip() {
-                        IpAddr::V4(v) => v,
-                        _ => return,
-                    };
-                    (Arc::clone(&ns.sock), v4)
-                }
-                None => return,
-            }
+        let (sock, server_v4, relay_v4) = match self.net_recv_params() {
+            Some(p) => p,
+            None    => return,
         };
 
         let mut split_buf       = SplitBuffer::new();
@@ -988,11 +1056,10 @@ impl SampClient {
                 last_scores = now;
             }
 
-            let deadline = Instant::now() + Duration::from_millis(30);
             let _ = sock.set_read_timeout(Some(Duration::from_millis(30)));
-            let n = match sock.recv_from(&mut recv_buf) {
-                Ok((n, src)) if matches!(src.ip(), IpAddr::V4(v4) if v4 == server_v4) => n,
-                _ => continue,
+            let n = match recv_one(&sock, &mut recv_buf, server_v4, relay_v4) {
+                Some(n) => n,
+                None    => continue,
             };
 
             let data = &recv_buf[..n];
@@ -1017,8 +1084,6 @@ impl SampClient {
                 }
                 self.process_packet_data(&pkt.data);
             }
-
-            let _ = deadline; // keep deadline in scope
         }
     }
 
@@ -1101,25 +1166,52 @@ fn resolve_host(host: &str, port: u16) -> Option<Ipv4Addr> {
     None
 }
 
-// Receive a datagram from `server_v4` before `deadline`.
-// Returns None only if deadline is reached without a matching packet.
-fn recv_deadline(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, deadline: Instant) -> Option<usize> {
-    recv_deadline_cap(sock, buf, server_v4, deadline, Duration::from_secs(1))
+// ── Low-level receive helpers ─────────────────────────────────────────────────
+
+/// Receive one UDP datagram and strip the SOCKS5 header when a relay is active.
+///
+/// - Direct mode  (`relay_v4 = None`):  accept only datagrams whose source IP
+///   matches `server_v4`.
+/// - SOCKS5 mode  (`relay_v4 = Some`):  accept only datagrams from the relay,
+///   strip the SOCKS5 UDP header, and verify the embedded source IP matches
+///   `server_v4`.  The stripped payload is written back to the start of `buf`.
+///
+/// Returns the payload length, or `None` if the datagram should be discarded
+/// (wrong source, malformed header, or a transient recv error).
+fn recv_one(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, relay_v4: Option<Ipv4Addr>) -> Option<usize> {
+    let (n, src) = sock.recv_from(buf).ok()?;
+    let src_v4 = match src.ip() { IpAddr::V4(v) => v, _ => return None };
+
+    match relay_v4 {
+        Some(relay) => {
+            if src_v4 != relay { return None; }
+            let (origin, hdr_len) = socks5::unwrap_packet(&buf[..n])?;
+            if origin != server_v4 { return None; }
+            buf.copy_within(hdr_len..n, 0);
+            Some(n - hdr_len)
+        }
+        None => {
+            if src_v4 == server_v4 { Some(n) } else { None }
+        }
+    }
 }
 
-// Like recv_deadline but caps each poll to `cap`.
-fn recv_deadline_cap(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, deadline: Instant, cap: Duration) -> Option<usize> {
+/// Receive a datagram from `server_v4` before `deadline`.
+/// Returns None only if deadline is reached without a matching packet.
+fn recv_deadline(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, deadline: Instant, relay_v4: Option<Ipv4Addr>) -> Option<usize> {
+    recv_deadline_cap(sock, buf, server_v4, deadline, Duration::from_secs(1), relay_v4)
+}
+
+/// Like recv_deadline but caps each poll to `cap`.
+fn recv_deadline_cap(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, deadline: Instant, cap: Duration, relay_v4: Option<Ipv4Addr>) -> Option<usize> {
     loop {
         let now = Instant::now();
         if now >= deadline { return None; }
         let remaining = deadline - now;
         let poll = remaining.min(cap).max(Duration::from_millis(1));
         let _ = sock.set_read_timeout(Some(poll));
-        match sock.recv_from(buf) {
-            Ok((n, src)) if matches!(src.ip(), IpAddr::V4(v4) if v4 == server_v4) => {
-                return Some(n);
-            }
-            _ => {}
+        if let Some(n) = recv_one(sock, buf, server_v4, relay_v4) {
+            return Some(n);
         }
     }
 }

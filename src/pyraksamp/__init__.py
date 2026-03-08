@@ -34,6 +34,18 @@ from collections.abc import Callable
 from typing import Any, overload
 
 from pyraksamp import _core
+from pyraksamp._core import (
+    SAMPConnectionError,
+    SAMPBanned,
+    SAMPInvalidPassword,
+    SAMPServerFull,
+    SAMPRejected,
+    SAMPHandshakeTimeout,
+    SAMPConnectionTimeout,
+    SAMPHostResolutionError,
+    SAMPProxyError,
+    SAMPSocketError,
+)
 from pyraksamp._actions import _Actions
 from pyraksamp._bridge import _setup_bridge
 from pyraksamp._bus import _EventBus
@@ -165,6 +177,17 @@ __all__ = [
     "ListDialog",
     "TablistDialog",
     "TablistHeadersDialog",
+    # Connection exceptions
+    "SAMPConnectionError",
+    "SAMPBanned",
+    "SAMPInvalidPassword",
+    "SAMPServerFull",
+    "SAMPRejected",
+    "SAMPHandshakeTimeout",
+    "SAMPConnectionTimeout",
+    "SAMPHostResolutionError",
+    "SAMPProxyError",
+    "SAMPSocketError",
     # Dialog errors
     "DialogAlreadyRespondedError",
     # Dialog helpers
@@ -319,10 +342,30 @@ class SAMPBot:
         password: str = "",
         gpci: str = "",
         server_encoding: str = "utf-8",
+        proxy: str | None = None,
     ):
         if not gpci:
             gpci = gen_gpci()
-        self._client = _SAMPClient(host, port, nickname, password, gpci)
+        proxy_host = proxy_port_int = proxy_username = proxy_password = None
+        if proxy:
+            from urllib.parse import urlparse
+
+            _p = urlparse(proxy)
+            proxy_host = _p.hostname
+            proxy_port_int = _p.port
+            proxy_username = _p.username or None
+            proxy_password = _p.password or None
+        self._client = _SAMPClient(
+            host,
+            port,
+            nickname,
+            password,
+            gpci,
+            proxy_host=proxy_host,
+            proxy_port=proxy_port_int,
+            proxy_username=proxy_username,
+            proxy_password=proxy_password,
+        )
         self._server_encoding = server_encoding
         self._bus = _EventBus()
         self._dispatcher = _Dispatcher(self._bus)
@@ -347,7 +390,7 @@ class SAMPBot:
 
     # ── Connection lifecycle ───────────────────────────────────────────────────
 
-    async def start(self, timeout: float = 15.0) -> bool:
+    async def start(self, timeout: float = 15.0) -> None:
         """Connect and start the background receive/keepalive thread.
 
         Parameters
@@ -355,9 +398,26 @@ class SAMPBot:
         timeout
             Maximum seconds to wait for the connection to be accepted.
 
-        Returns
-        -------
-            ``True`` if connected, ``False`` on timeout or rejection.
+        Raises
+        ------
+        SAMPBanned
+            The client is banned from the server.
+        SAMPInvalidPassword
+            Wrong server password.
+        SAMPServerFull
+            Server has no free player slots.
+        SAMPRejected
+            Server actively refused the connection attempt.
+        SAMPHandshakeTimeout
+            Server did not complete the open-connection handshake in time.
+        SAMPConnectionTimeout
+            Server did not accept the connection request in time.
+        SAMPHostResolutionError
+            Server hostname could not be resolved.
+        SAMPProxyError
+            SOCKS5 proxy handshake failed.
+        SAMPSocketError
+            Could not bind the local UDP socket.
         """
         loop = asyncio.get_running_loop()
         _setup_bridge(
@@ -377,12 +437,13 @@ class SAMPBot:
             )
         if not getattr(self, "_atexit_registered", False):
             import atexit
+
             atexit.register(self._client.stop)
             self._atexit_registered = True
         self._started = True
         for listener in self._listeners:
             listener.start()
-        return await loop.run_in_executor(None, lambda: self._client.start(timeout))
+        await loop.run_in_executor(None, lambda: self._client.start(timeout))
 
     def disconnect(self) -> None:
         """Send disconnect notification and stop the receive loop."""

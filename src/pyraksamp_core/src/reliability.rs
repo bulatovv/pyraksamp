@@ -229,6 +229,7 @@ mod tests {
     use super::*;
     use crate::bitstream::BitStream;
 
+    #[allow(clippy::too_many_arguments)]
     fn make_split_frag(
         msg_num: u16, rel: u8, oc: u8, oi: u16,
         split_id: u16, frag_idx: u32, frag_count: u32,
