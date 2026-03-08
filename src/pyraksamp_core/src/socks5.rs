@@ -204,3 +204,117 @@ pub fn unwrap_packet(data: &[u8]) -> Option<(Ipv4Addr, usize)> {
         _ => None, // domain / IPv6 not expected from a game server
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ─── wrap_packet ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn wrap_header_layout() {
+        let dest: SocketAddr = "1.2.3.4:5678".parse().unwrap();
+        let out = wrap_packet(&[], dest);
+        assert_eq!(out.len(), 10);
+        assert_eq!(&out[0..2], &[0x00, 0x00]);           // RSV
+        assert_eq!(out[2], 0x00);                         // FRAG = 0
+        assert_eq!(out[3], ATYP_IPV4);                    // ATYP
+        assert_eq!(&out[4..8], &[1, 2, 3, 4]);           // dst addr
+        assert_eq!(&out[8..10], &5678u16.to_be_bytes());  // dst port (big-endian)
+    }
+
+    #[test]
+    fn wrap_appends_payload() {
+        let dest: SocketAddr = "10.0.0.1:7777".parse().unwrap();
+        let payload = b"hello";
+        let out = wrap_packet(payload, dest);
+        assert_eq!(out.len(), 10 + payload.len());
+        assert_eq!(&out[10..], payload);
+    }
+
+    #[test]
+    fn wrap_empty_payload() {
+        let dest: SocketAddr = "127.0.0.1:1234".parse().unwrap();
+        assert_eq!(wrap_packet(&[], dest).len(), 10);
+    }
+
+    // ─── unwrap_packet ────────────────────────────────────────────────────────
+
+    /// Build a minimal valid SOCKS5 UDP header for an IPv4 source.
+    fn make_header(src_ip: [u8; 4], src_port: u16) -> Vec<u8> {
+        let mut v = vec![0x00, 0x00, 0x00, ATYP_IPV4];
+        v.extend_from_slice(&src_ip);
+        v.extend_from_slice(&src_port.to_be_bytes());
+        v
+    }
+
+    #[test]
+    fn unwrap_returns_correct_ip_and_header_len() {
+        let hdr = make_header([1, 2, 3, 4], 7777);
+        let (src, hdr_len) = unwrap_packet(&hdr).unwrap();
+        assert_eq!(src, Ipv4Addr::new(1, 2, 3, 4));
+        assert_eq!(hdr_len, 10);
+    }
+
+    #[test]
+    fn unwrap_payload_starts_at_header_len() {
+        let mut pkt = make_header([192, 168, 1, 1], 7777);
+        pkt.extend_from_slice(b"gamedata");
+        let (_, hdr_len) = unwrap_packet(&pkt).unwrap();
+        assert_eq!(&pkt[hdr_len..], b"gamedata");
+    }
+
+    #[test]
+    fn unwrap_too_short_returns_none() {
+        for len in 0..10 {
+            assert!(
+                unwrap_packet(&vec![0u8; len]).is_none(),
+                "expected None for {len}-byte input"
+            );
+        }
+    }
+
+    #[test]
+    fn unwrap_fragmented_returns_none() {
+        let mut hdr = make_header([1, 2, 3, 4], 7777);
+        hdr[2] = 1; // FRAG != 0
+        assert!(unwrap_packet(&hdr).is_none());
+    }
+
+    #[test]
+    fn unwrap_domain_atyp_returns_none() {
+        let mut hdr = make_header([1, 2, 3, 4], 7777);
+        hdr[3] = ATYP_DOMAIN;
+        assert!(unwrap_packet(&hdr).is_none());
+    }
+
+    #[test]
+    fn unwrap_ipv6_atyp_returns_none() {
+        let mut hdr = make_header([1, 2, 3, 4], 7777);
+        hdr[3] = 0x04; // ATYP_IPV6
+        assert!(unwrap_packet(&hdr).is_none());
+    }
+
+    // ─── roundtrip ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn roundtrip_dest_ip_recovered_as_src() {
+        let dest: SocketAddr = "5.6.7.8:9999".parse().unwrap();
+        let payload = b"SA:MP packet";
+        let wrapped = wrap_packet(payload, dest);
+        let (src, hdr_len) = unwrap_packet(&wrapped).unwrap();
+        assert_eq!(src, Ipv4Addr::new(5, 6, 7, 8));
+        assert_eq!(&wrapped[hdr_len..], payload);
+    }
+
+    #[test]
+    fn roundtrip_empty_payload() {
+        let dest: SocketAddr = "10.20.30.40:1000".parse().unwrap();
+        let wrapped = wrap_packet(&[], dest);
+        let (src, hdr_len) = unwrap_packet(&wrapped).unwrap();
+        assert_eq!(src, Ipv4Addr::new(10, 20, 30, 40));
+        assert_eq!(hdr_len, wrapped.len());
+    }
+}
