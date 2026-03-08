@@ -4,6 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::time::{Duration, Instant};
+use std::{fmt, io};
 
 use crate::socks5;
 
@@ -188,6 +189,48 @@ macro_rules! fire {
     }};
 }
 
+// ── Connect errors ────────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub enum ConnectError {
+    /// Server hostname could not be resolved (or is not IPv4).
+    HostResolution,
+    /// Could not bind the local UDP socket.
+    SocketBind(io::Error),
+    /// SOCKS5 proxy handshake failed.
+    Proxy(io::Error),
+    /// Server did not complete the open-connection handshake in time.
+    HandshakeTimeout,
+    /// Server did not accept the connection request in time.
+    ConnectionTimeout,
+    /// Server actively refused the connection attempt.
+    Rejected,
+    /// Client is banned from the server.
+    Banned,
+    /// Wrong server password.
+    InvalidPassword,
+    /// Server has no free player slots.
+    NoFreeSlots,
+}
+
+impl fmt::Display for ConnectError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConnectError::HostResolution    => write!(f, "could not resolve server host"),
+            ConnectError::SocketBind(e)     => write!(f, "failed to bind UDP socket: {e}"),
+            ConnectError::Proxy(e)          => write!(f, "SOCKS5 proxy error: {e}"),
+            ConnectError::HandshakeTimeout  => write!(f, "connection handshake timed out"),
+            ConnectError::ConnectionTimeout => write!(f, "connection request timed out"),
+            ConnectError::Rejected          => write!(f, "connection attempt failed"),
+            ConnectError::Banned            => write!(f, "banned from server"),
+            ConnectError::InvalidPassword   => write!(f, "invalid server password"),
+            ConnectError::NoFreeSlots       => write!(f, "server is full"),
+        }
+    }
+}
+
+impl std::error::Error for ConnectError {}
+
 // ── Network helpers ───────────────────────────────────────────────────────────
 
 struct NetState {
@@ -260,14 +303,23 @@ impl SampClient {
     pub fn is_connected(&self) -> bool { self.connected.load(Ordering::Relaxed) }
     pub fn player_id(&self)    -> i32  { *self.player_id.lock().unwrap() }
 
-    /// Returns the IPv4 address of the SOCKS5 UDP relay, if one is active.
-    fn relay_v4(&self) -> Option<Ipv4Addr> {
-        self.net.lock().unwrap().as_ref().and_then(|ns| {
-            ns.relay_addr.and_then(|a| match a.ip() {
-                IpAddr::V4(v) => Some(v),
-                _ => None,
-            })
-        })
+    /// Extract `(socket, server_ipv4, relay_ipv4)` from the active `NetState`.
+    ///
+    /// Returns `None` when no connection is active or the server address is not IPv4.
+    /// All three callers — `do_handshake`, `do_connection_request`, and `run` — use
+    /// this single helper so the extraction logic lives in exactly one place.
+    fn net_recv_params(&self) -> Option<(Arc<UdpSocket>, Ipv4Addr, Option<Ipv4Addr>)> {
+        let guard = self.net.lock().unwrap();
+        let ns = guard.as_ref()?;
+        let server_v4 = match ns.server_addr.ip() {
+            IpAddr::V4(v) => v,
+            _ => return None,
+        };
+        let relay_v4 = ns.relay_addr.and_then(|a| match a.ip() {
+            IpAddr::V4(v) => Some(v),
+            _ => None,
+        });
+        Some((Arc::clone(&ns.sock), server_v4, relay_v4))
     }
 
     // ─── Internal send primitives ─────────────────────────────────────────────
@@ -327,16 +379,18 @@ impl SampClient {
 
     // ─── Handshake phase ──────────────────────────────────────────────────────
 
-    fn do_handshake(&self, sock: &UdpSocket, server_v4: Ipv4Addr, timeout: Duration) -> bool {
-        let relay_v4 = self.relay_v4();
+    fn do_handshake(&self, timeout: Duration) -> Result<(), ConnectError> {
+        let (sock, server_v4, relay_v4) = self.net_recv_params()
+            .ok_or(ConnectError::HostResolution)?;
+
         let req = [ID_OPEN_CONNECTION_REQUEST, 0, 0];
         self.send_encrypted(&req);
 
         let deadline = Instant::now() + timeout;
         let mut buf = [0u8; 256];
         loop {
-            match recv_deadline(sock, &mut buf, server_v4, deadline, relay_v4) {
-                None => return false,
+            match recv_deadline(&sock, &mut buf, server_v4, deadline, relay_v4) {
+                None => return Err(ConnectError::HandshakeTimeout),
                 Some(n) => {
                     if n >= 3 && buf[0] == ID_OPEN_CONNECTION_COOKIE {
                         let lo = buf[1];
@@ -350,7 +404,7 @@ impl SampClient {
                         continue;
                     }
                     if n >= 1 && buf[0] == ID_OPEN_CONNECTION_REPLY {
-                        return true;
+                        return Ok(());
                     }
                 }
             }
@@ -444,8 +498,10 @@ impl SampClient {
         self.send_reliability_pkt(rpc_bs.as_bytes(), REL_RELIABLE, 0, 0);
     }
 
-    fn do_connection_request(&self, sock: &UdpSocket, server_v4: Ipv4Addr, timeout: Duration) -> bool {
-        let relay_v4 = self.relay_v4();
+    fn do_connection_request(&self, timeout: Duration) -> Result<(), ConnectError> {
+        let (sock, server_v4, relay_v4) = self.net_recv_params()
+            .ok_or(ConnectError::HostResolution)?;
+
         let mut cr = vec![ID_CONNECTION_REQUEST];
         if !self.password.is_empty() {
             cr.extend_from_slice(self.password.as_bytes());
@@ -457,8 +513,8 @@ impl SampClient {
         let mut split_buf = SplitBuffer::new();
 
         loop {
-            let n = match recv_deadline_cap(sock, &mut buf, server_v4, deadline, Duration::from_millis(500), relay_v4) {
-                None => return false,
+            let n = match recv_deadline_cap(&sock, &mut buf, server_v4, deadline, Duration::from_millis(500), relay_v4) {
+                None => return Err(ConnectError::ConnectionTimeout),
                 Some(n) => n,
             };
 
@@ -490,15 +546,12 @@ impl SampClient {
                     id if id == ID_CONNECTION_REQUEST_ACCEPTED => {
                         self.handle_connection_accepted_raw(&pkt.data);
                         self.connected.store(true, Ordering::Relaxed);
-                        return true;
+                        return Ok(());
                     }
-                    id if id == ID_CONNECTION_BANNED
-                        || id == ID_INVALID_PASSWORD
-                        || id == ID_NO_FREE_INCOMING_CONNECTIONS
-                        || id == ID_CONNECTION_ATTEMPT_FAILED =>
-                    {
-                        return false;
-                    }
+                    id if id == ID_CONNECTION_BANNED            => return Err(ConnectError::Banned),
+                    id if id == ID_INVALID_PASSWORD             => return Err(ConnectError::InvalidPassword),
+                    id if id == ID_NO_FREE_INCOMING_CONNECTIONS => return Err(ConnectError::NoFreeSlots),
+                    id if id == ID_CONNECTION_ATTEMPT_FAILED    => return Err(ConnectError::Rejected),
                     _ => {}
                 }
             }
@@ -936,23 +989,19 @@ impl SampClient {
 
     // ─── Public API ───────────────────────────────────────────────────────────
 
-    pub fn connect(&self, timeout_sec: f64) -> bool {
-        let server_v4 = match resolve_host(&self.host, self.port) {
-            Some(v) => v,
-            None => return false,
-        };
+    pub fn connect(&self, timeout_sec: f64) -> Result<(), ConnectError> {
+        let server_v4 = resolve_host(&self.host, self.port)
+            .ok_or(ConnectError::HostResolution)?;
 
-        let sock = match UdpSocket::bind("0.0.0.0:0") {
-            Ok(s) => s,
-            Err(_) => return false,
-        };
+        let sock = UdpSocket::bind("0.0.0.0:0")
+            .map_err(ConnectError::SocketBind)?;
 
         // If a SOCKS5 proxy is configured, negotiate UDP ASSOCIATE now.
         let (relay_addr, tcp_ctrl) = match self.proxy.as_ref() {
-            Some(proxy) => match socks5::udp_associate(proxy) {
-                Ok((relay, ctrl)) => (Some(relay), Some(ctrl)),
-                Err(_) => return false,
-            },
+            Some(proxy) => {
+                let (relay, ctrl) = socks5::udp_associate(proxy).map_err(ConnectError::Proxy)?;
+                (Some(relay), Some(ctrl))
+            }
             None => (None, None),
         };
 
@@ -966,37 +1015,18 @@ impl SampClient {
             });
         }
 
-        let (sock_arc, _) = {
-            let guard = self.net.lock().unwrap();
-            let ns = guard.as_ref().unwrap();
-            (Arc::clone(&ns.sock), ns.server_addr)
-        };
-
         let half = Duration::from_secs_f64(timeout_sec / 2.0);
-        if !self.do_handshake(&sock_arc, server_v4, half) { return false; }
-        if !self.do_connection_request(&sock_arc, server_v4, half) { return false; }
-        self.connected.load(Ordering::Relaxed)
+        self.do_handshake(half)?;
+        self.do_connection_request(half)?;
+        Ok(())
     }
 
     pub fn run(&self) {
         self.running.store(true, Ordering::Relaxed);
 
-        let (sock, server_v4, relay_v4) = {
-            let guard = self.net.lock().unwrap();
-            match guard.as_ref() {
-                Some(ns) => {
-                    let v4 = match ns.server_addr.ip() {
-                        IpAddr::V4(v) => v,
-                        _ => return,
-                    };
-                    let relay_v4 = ns.relay_addr.and_then(|a| match a.ip() {
-                        IpAddr::V4(v) => Some(v),
-                        _ => None,
-                    });
-                    (Arc::clone(&ns.sock), v4, relay_v4)
-                }
-                None => return,
-            }
+        let (sock, server_v4, relay_v4) = match self.net_recv_params() {
+            Some(p) => p,
+            None    => return,
         };
 
         let mut split_buf       = SplitBuffer::new();

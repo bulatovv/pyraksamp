@@ -146,15 +146,22 @@ impl PySAMPClient {
     }
 
     #[pyo3(signature = (timeout=15.0))]
-    fn start(&self, py: Python, timeout: f64) -> bool {
+    fn start(&self, py: Python, timeout: f64) -> PyResult<bool> {
+        use pyraksamp_core::client::ConnectError;
         let inner = Arc::clone(&self.inner);
-        let connected = py.allow_threads(move || inner.connect(timeout));
-        if !connected { return false; }
+        match py.allow_threads(move || inner.connect(timeout)) {
+            Ok(()) => {}
+            Err(ConnectError::Rejected
+                | ConnectError::Banned
+                | ConnectError::InvalidPassword
+                | ConnectError::NoFreeSlots) => return Ok(false),
+            Err(e) => return Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
+        }
         let inner = Arc::clone(&self.inner);
-        std::thread::Builder::new()
+        Ok(std::thread::Builder::new()
             .name(format!("samp-recv-{}", self.inner.player_id()))
             .spawn(move || inner.run())
-            .is_ok()
+            .is_ok())
     }
 
     fn stop(&self)       { self.inner.stop(); }
