@@ -338,9 +338,10 @@ def test_send_dialog_response_delegates():
 
 def test_start_registers_atexit_handler():
     async def _inner():
-        with patch("pyraksamp._SAMPClient") as MockClient, patch(
-            "atexit.register"
-        ) as mock_register:
+        with (
+            patch("pyraksamp._SAMPClient") as MockClient,
+            patch("atexit.register") as mock_register,
+        ):
             MockClient.return_value.start.return_value = True
             bot = SAMPBot("host")
             await bot.start()
@@ -351,9 +352,10 @@ def test_start_registers_atexit_handler():
 
 def test_start_registers_atexit_only_once():
     async def _inner():
-        with patch("pyraksamp._SAMPClient") as MockClient, patch(
-            "atexit.register"
-        ) as mock_register:
+        with (
+            patch("pyraksamp._SAMPClient") as MockClient,
+            patch("atexit.register") as mock_register,
+        ):
             MockClient.return_value.start.return_value = True
             bot = SAMPBot("host")
             await bot.start()

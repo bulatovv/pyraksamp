@@ -349,13 +349,18 @@ class SAMPBot:
         proxy_host = proxy_port_int = proxy_username = proxy_password = None
         if proxy:
             from urllib.parse import urlparse
+
             _p = urlparse(proxy)
             proxy_host = _p.hostname
             proxy_port_int = _p.port
             proxy_username = _p.username or None
             proxy_password = _p.password or None
         self._client = _SAMPClient(
-            host, port, nickname, password, gpci,
+            host,
+            port,
+            nickname,
+            password,
+            gpci,
             proxy_host=proxy_host,
             proxy_port=proxy_port_int,
             proxy_username=proxy_username,
@@ -432,6 +437,7 @@ class SAMPBot:
             )
         if not getattr(self, "_atexit_registered", False):
             import atexit
+
             atexit.register(self._client.stop)
             self._atexit_registered = True
         self._started = True
