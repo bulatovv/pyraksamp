@@ -73,12 +73,23 @@ impl PyCbs {
     }
 }
 
+/// Acquire the GIL and run `f` only if the Python interpreter is still alive.
+/// During interpreter shutdown (e.g. after Ctrl+C), `Py_IsInitialized` returns
+/// 0 and calling `PyGILState_Ensure` / `PyGILState_Release` is unsafe, which
+/// causes the "Fatal Python error: PyGILState_Release" crash.
+#[inline]
+fn with_gil_safe<F: FnOnce(Python<'_>)>(f: F) {
+    if unsafe { pyo3::ffi::Py_IsInitialized() } != 0 {
+        Python::with_gil(f);
+    }
+}
+
 // Wrap a Python callable into an Arc<dyn Fn()> that acquires the GIL when called.
 macro_rules! wrap0 {
     ($py_obj:expr) => {{
         let cb: Py<PyAny> = $py_obj;
         Arc::new(move || {
-            Python::with_gil(|py| { let _ = cb.call0(py); });
+            with_gil_safe(|py| { let _ = cb.call0(py); });
         }) as Arc<dyn Fn() + Send + Sync>
     }};
 }
@@ -87,7 +98,7 @@ macro_rules! wrap {
     ($py_obj:expr, $($arg:ident : $ty:ty),+) => {{
         let cb: Py<PyAny> = $py_obj;
         Arc::new(move |$($arg: $ty),+| {
-            Python::with_gil(|py| {
+            with_gil_safe(|py| {
                 let _ = cb.call1(py, ($($arg,)+));
             });
         }) as Arc<dyn Fn($($ty),+) + Send + Sync>
@@ -178,7 +189,7 @@ impl PySAMPClient {
         self.py_cbs.on_rpc = cb.as_ref().map(|c| c.clone_ref(py));
         self.inner.callbacks.lock().unwrap().on_rpc = cb.map(|c| {
             Arc::new(move |rpc_id: u8, data: Vec<u8>| {
-                Python::with_gil(|py| {
+                with_gil_safe(|py| {
                     let b = pyo3::types::PyBytes::new(py, &data);
                     let _ = c.call1(py, (rpc_id, b));
                 });
@@ -203,7 +214,7 @@ impl PySAMPClient {
         self.py_cbs.on_chat = cb.as_ref().map(|c| c.clone_ref(py));
         self.inner.callbacks.lock().unwrap().on_chat = cb.map(|c| {
             Arc::new(move |pid: u16, text: Vec<u8>| {
-                Python::with_gil(|py| { let _ = c.call1(py, (pid, PyBytes::new(py, &text))); });
+                with_gil_safe(|py| { let _ = c.call1(py, (pid, PyBytes::new(py, &text))); });
             }) as Arc<dyn Fn(u16, Vec<u8>) + Send + Sync>
         });
     }
@@ -213,7 +224,7 @@ impl PySAMPClient {
         self.py_cbs.on_client_message = cb.as_ref().map(|c| c.clone_ref(py));
         self.inner.callbacks.lock().unwrap().on_client_message = cb.map(|c| {
             Arc::new(move |color: u32, text: Vec<u8>| {
-                Python::with_gil(|py| { let _ = c.call1(py, (color, PyBytes::new(py, &text))); });
+                with_gil_safe(|py| { let _ = c.call1(py, (color, PyBytes::new(py, &text))); });
             }) as Arc<dyn Fn(u32, Vec<u8>) + Send + Sync>
         });
     }
@@ -223,7 +234,7 @@ impl PySAMPClient {
         self.py_cbs.on_dialog = cb.as_ref().map(|c| c.clone_ref(py));
         self.inner.callbacks.lock().unwrap().on_dialog = cb.map(|c| {
             Arc::new(move |did: u16, style: u8, title: Vec<u8>, btn1: Vec<u8>, btn2: Vec<u8>, body: Vec<u8>| {
-                Python::with_gil(|py| {
+                with_gil_safe(|py| {
                     let _ = c.call1(py, (did, style,
                         PyBytes::new(py, &title), PyBytes::new(py, &btn1),
                         PyBytes::new(py, &btn2),  PyBytes::new(py, &body)));
@@ -273,7 +284,7 @@ impl PySAMPClient {
         self.py_cbs.on_player_streamed_in = cb.as_ref().map(|c| c.clone_ref(py));
         self.inner.callbacks.lock().unwrap().on_player_streamed_in = cb.map(|c| {
             Arc::new(move |pid: u16, team: u8, skin: i32, x: f32, y: f32, z: f32, rot: f32, color: u32, fs: u8| {
-                Python::with_gil(|py| { let _ = c.call1(py, (pid, team, skin, x, y, z, rot, color, fs)); });
+                with_gil_safe(|py| { let _ = c.call1(py, (pid, team, skin, x, y, z, rot, color, fs)); });
             }) as Arc<dyn Fn(u16, u8, i32, f32, f32, f32, f32, u32, u8) + Send + Sync>
         });
     }
@@ -320,7 +331,7 @@ impl PySAMPClient {
         self.inner.callbacks.lock().unwrap().on_spawn_info = cb.map(|c| {
             Arc::new(move |team: u8, skin: u32, x: f32, y: f32, z: f32, rot: f32,
                            w1: u32, w2: u32, w3: u32, a1: u32, a2: u32, a3: u32| {
-                Python::with_gil(|py| { let _ = c.call1(py, (team, skin, x, y, z, rot, w1, w2, w3, a1, a2, a3)); });
+                with_gil_safe(|py| { let _ = c.call1(py, (team, skin, x, y, z, rot, w1, w2, w3, a1, a2, a3)); });
             }) as Arc<dyn Fn(u8, u32, f32, f32, f32, f32, u32, u32, u32, u32, u32, u32) + Send + Sync>
         });
     }
@@ -405,7 +416,7 @@ impl PySAMPClient {
                            color1: u8, color2: u8, health: f32, interior: u8,
                            door_dmg: u32, panel_dmg: u32, light_dmg: u8, tire_dmg: u8,
                            add_siren: u8, paintjob: u8, bc1: u32, bc2: u32| {
-                Python::with_gil(|py| {
+                with_gil_safe(|py| {
                     use pyo3::IntoPyObject;
                     use pyo3::types::PyTuple;
                     let items: Vec<pyo3::PyObject> = vec![
@@ -455,7 +466,7 @@ impl PySAMPClient {
                            bgcol: u32, style: u8, sel: u8, x: f32, y: f32, model: u16,
                            rx: f32, ry: f32, rz: f32, zoom: f32, col1: i16, col2: i16,
                            text: String| {
-                Python::with_gil(|py| {
+                with_gil_safe(|py| {
                     use pyo3::IntoPyObject;
                     use pyo3::types::PyTuple;
                     let items: Vec<pyo3::PyObject> = vec![
