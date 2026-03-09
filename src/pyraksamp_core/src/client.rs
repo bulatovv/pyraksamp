@@ -972,7 +972,9 @@ impl SampClient {
         }
     }
 
-    fn send_keepalive(&self) {
+    /// Build the raw on-foot sync packet bytes (without sending).
+    /// Extracted so that unit tests can inspect the packet without a live socket.
+    fn build_keepalive_pkt(&self) -> Vec<u8> {
         // OnFootData struct (68 bytes), packed:
         // lrAnalog(u16) udAnalog(u16) wKeys(u16)
         // vecPos(3xf32) fQuaternion(4xf32)
@@ -994,7 +996,11 @@ impl SampClient {
         // wSurfInfo = 0xFFFF at offset 62
         pkt[1 + 62] = 0xFF;
         pkt[1 + 63] = 0xFF;
-        self.send_reliability_pkt(&pkt, REL_UNRELIABLE_SEQUENCED, 0, 0);
+        pkt
+    }
+
+    fn send_keepalive(&self) {
+        self.send_reliability_pkt(&self.build_keepalive_pkt(), REL_UNRELIABLE_SEQUENCED, 0, 0);
     }
 
     // ─── Public API ───────────────────────────────────────────────────────────
@@ -1231,5 +1237,72 @@ fn recv_deadline_cap(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, dead
         if let Some(n) = recv_one(sock, buf, server_v4, relay_v4) {
             return Some(n);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_client() -> Arc<SampClient> {
+        SampClient::new("127.0.0.1", 7777, "TestBot", "", "", None)
+    }
+
+    // ── set_keys / build_keepalive_pkt ────────────────────────────────────────
+
+    #[test]
+    fn test_keepalive_pkt_default_keys_are_zero() {
+        let c = make_client();
+        let pkt = c.build_keepalive_pkt();
+        // lrAnalog at bytes 1-2, udAnalog at 3-4, wKeys at 5-6
+        assert_eq!(&pkt[1..7], &[0, 0, 0, 0, 0, 0], "keys/analog should default to zero");
+    }
+
+    #[test]
+    fn test_set_keys_reflected_in_packet() {
+        let c = make_client();
+        // Keys::FIRE | Keys::SPRINT = 4 | 8 = 12
+        c.set_keys(12, 100, 200);
+        let pkt = c.build_keepalive_pkt();
+        assert_eq!(u16::from_le_bytes(pkt[1..3].try_into().unwrap()), 100, "lr_analog");
+        assert_eq!(u16::from_le_bytes(pkt[3..5].try_into().unwrap()), 200, "ud_analog");
+        assert_eq!(u16::from_le_bytes(pkt[5..7].try_into().unwrap()), 12,  "wKeys");
+    }
+
+    #[test]
+    fn test_set_keys_last_write_wins() {
+        let c = make_client();
+        c.set_keys(0xFFFF, 0xFFFF, 0xFFFF);
+        c.set_keys(1, 2, 3);
+        let pkt = c.build_keepalive_pkt();
+        assert_eq!(u16::from_le_bytes(pkt[1..3].try_into().unwrap()), 2);
+        assert_eq!(u16::from_le_bytes(pkt[3..5].try_into().unwrap()), 3);
+        assert_eq!(u16::from_le_bytes(pkt[5..7].try_into().unwrap()), 1);
+    }
+
+    #[test]
+    fn test_set_keys_max_values_dont_bleed_into_vecpos() {
+        let c = make_client();
+        c.set_keys(0xFFFF, 0xFFFF, 0xFFFF);
+        let pkt = c.build_keepalive_pkt();
+        // vecPos starts at pkt[7]; x and y (8 bytes) should still be zero
+        assert_eq!(&pkt[7..15], &[0u8; 8], "0xFFFF keys must not bleed into vecPos");
+    }
+
+    #[test]
+    fn test_keepalive_pkt_constants() {
+        let c = make_client();
+        let pkt = c.build_keepalive_pkt();
+        assert_eq!(pkt[0], ID_PLAYER_SYNC,                           "packet ID");
+        assert_eq!(&pkt[15..19], &3.0f32.to_le_bytes(),              "vecPos.z = 3.0");
+        assert_eq!(&pkt[31..35], &1.0f32.to_le_bytes(),              "quaternion.w = 1.0");
+        assert_eq!(pkt[35], 100,                                      "byteHealth = 100");
+        assert_eq!([pkt[63], pkt[64]], [0xFF, 0xFF],                  "wSurfInfo = 0xFFFF");
+    }
+
+    #[test]
+    fn test_keepalive_pkt_length() {
+        let c = make_client();
+        assert_eq!(c.build_keepalive_pkt().len(), 1 + 68);
     }
 }
