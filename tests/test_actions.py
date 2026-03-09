@@ -221,6 +221,32 @@ async def test_press_keys_refcount_same_bit():
 
 
 @pytest.mark.asyncio
+async def test_press_keys_combined_key():
+    """FIRE|SPRINT pressed as one call; both bits set then both cleared."""
+    client = make_client()
+    actions = _Actions(client)
+    await actions.press_keys(int(Keys.FIRE | Keys.SPRINT), duration=0)
+    key_states = [c.args[0] for c in client.set_keys.call_args_list]
+    assert key_states[0] == int(Keys.FIRE | Keys.SPRINT)
+    assert key_states[-1] == 0
+
+
+@pytest.mark.asyncio
+async def test_press_keys_intermediate_state():
+    """SPRINT still set at the exact moment FIRE releases (not yet zero)."""
+    client = make_client()
+    actions = _Actions(client)
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(actions.press_keys(int(Keys.SPRINT), duration=0.05))
+        tg.create_task(actions.press_keys(int(Keys.FIRE),   duration=0.02))
+    # Expected call sequence: set(SPRINT), set(SPRINT|FIRE), set(SPRINT), set(0)
+    # The second-to-last call must still have SPRINT but not FIRE.
+    key_states = [c.args[0] for c in client.set_keys.call_args_list]
+    assert key_states[-2] == int(Keys.SPRINT)
+    assert key_states[-1] == 0
+
+
+@pytest.mark.asyncio
 async def test_press_keys_releases_on_cancel():
     """Keys are released even when the task is cancelled."""
     client = make_client()
