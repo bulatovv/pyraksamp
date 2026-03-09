@@ -144,6 +144,7 @@ fn cloned(py: Python<'_>, opt: &Option<Py<PyAny>>) -> Option<Py<PyAny>> {
 impl PySAMPClient {
     #[new]
     #[pyo3(signature = (host, port, nickname, password="", gpci="", proxy_host=None, proxy_port=None, proxy_username=None, proxy_password=None))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         host: &str,
         port: u16,

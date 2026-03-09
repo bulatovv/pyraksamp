@@ -300,27 +300,28 @@ class Keys(IntFlag):
     members here use the on-foot name.  Vehicle-only aliases are listed in
     comments for when vehicle support is added.
     """
+
     # ── Shared (on foot & vehicle) ─────────────────────────────────────────────
-    ACTION           = 1        # TAB  / ALT GR
-    CROUCH           = 2        # C    / H
-    FIRE             = 4        # LCTRL / LALT
-    SPRINT           = 8        # SPACE / W
-    SECONDARY_ATTACK = 16       # ENTER / ENTER
-    JUMP             = 32       # LSHIFT / S
-    YES              = 65536    # Y
-    NO               = 131072   # N
-    CTRL_BACK        = 262144   # H
+    ACTION = 1  # TAB  / ALT GR
+    CROUCH = 2  # C    / H
+    FIRE = 4  # LCTRL / LALT
+    SPRINT = 8  # SPACE / W
+    SECONDARY_ATTACK = 16  # ENTER / ENTER
+    JUMP = 32  # LSHIFT / S
+    YES = 65536  # Y
+    NO = 131072  # N
+    CTRL_BACK = 262144  # H
 
     # ── On-foot only (same bit = different vehicle key, noted in comment) ───────
-    LOOK_RIGHT       = 64       # E           (veh: —)
-    AIM              = 128      # RMB         (veh: HANDBRAKE = 128)
-    LOOK_LEFT        = 256      # Q           (veh: —)
-    SUBMISSION       = 512      # NUM1        (veh: LOOK_BEHIND = 512)
-    WALK             = 1024     # LALT        (veh: —)
-    ANALOG_UP        = 2048     # NUM8
-    ANALOG_DOWN      = 4096     # NUM2
-    ANALOG_LEFT      = 8192     # NUM4
-    ANALOG_RIGHT     = 16384    # NUM6
+    LOOK_RIGHT = 64  # E           (veh: —)
+    AIM = 128  # RMB         (veh: HANDBRAKE = 128)
+    LOOK_LEFT = 256  # Q           (veh: —)
+    SUBMISSION = 512  # NUM1        (veh: LOOK_BEHIND = 512)
+    WALK = 1024  # LALT        (veh: —)
+    ANALOG_UP = 2048  # NUM8
+    ANALOG_DOWN = 4096  # NUM2
+    ANALOG_LEFT = 8192  # NUM4
+    ANALOG_RIGHT = 16384  # NUM6
 
 
 def gen_gpci() -> str:
