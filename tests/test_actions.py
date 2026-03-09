@@ -1,10 +1,15 @@
 """Isolated unit tests for _Actions."""
 
+import asyncio
+import contextlib
 import struct
 from unittest.mock import MagicMock
 
+import pytest
+
 from pyraksamp._actions import _Actions
 from pyraksamp import _core
+from pyraksamp import Keys
 
 
 def make_client():
@@ -145,3 +150,84 @@ def test_send_command():
     actions = _Actions(client)
     actions.send_command("/stats")
     client.send_command.assert_called_once_with(b"/stats")
+
+
+# ── send_keys (low-level) ──────────────────────────────────────────────────────
+
+
+def test_send_keys_delegates():
+    client = make_client()
+    actions = _Actions(client)
+    actions.send_keys(4, 100, 200)
+    client.set_keys.assert_called_once_with(4, 100, 200)
+
+
+def test_send_keys_defaults():
+    client = make_client()
+    actions = _Actions(client)
+    actions.send_keys(0)
+    client.set_keys.assert_called_once_with(0, 0, 0)
+
+
+def test_send_keys_masks_negative_analog():
+    client = make_client()
+    actions = _Actions(client)
+    actions.send_keys(0, -128, -256)
+    _, lr, ud = client.set_keys.call_args.args
+    assert lr == (-128 & 0xFFFF)
+    assert ud == (-256 & 0xFFFF)
+
+
+def test_send_keys_accepts_keys_enum():
+    client = make_client()
+    actions = _Actions(client)
+    actions.send_keys(Keys.FIRE | Keys.SPRINT)
+    client.set_keys.assert_called_once_with(int(Keys.FIRE | Keys.SPRINT), 0, 0)
+
+
+# ── press_keys (high-level) ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_press_keys_sets_then_clears():
+    client = make_client()
+    actions = _Actions(client)
+    await actions.press_keys(int(Keys.FIRE), duration=0)
+    calls = [c.args[0] for c in client.set_keys.call_args_list]
+    assert calls[0] == int(Keys.FIRE)   # pressed
+    assert calls[-1] == 0               # released
+
+
+@pytest.mark.asyncio
+async def test_press_keys_concurrent_different_bits():
+    """SPRINT and FIRE pressed concurrently; FIRE releases first without killing SPRINT."""
+    client = make_client()
+    actions = _Actions(client)
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(actions.press_keys(int(Keys.SPRINT), duration=0.05))
+        tg.create_task(actions.press_keys(int(Keys.FIRE),   duration=0.02))
+    assert client.set_keys.call_args.args[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_press_keys_refcount_same_bit():
+    """Same key pressed twice; only clears when both calls finish."""
+    client = make_client()
+    actions = _Actions(client)
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(actions.press_keys(int(Keys.FIRE), duration=0.05))
+        tg.create_task(actions.press_keys(int(Keys.FIRE), duration=0.02))
+    assert client.set_keys.call_args.args[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_press_keys_releases_on_cancel():
+    """Keys are released even when the task is cancelled."""
+    client = make_client()
+    actions = _Actions(client)
+    task = asyncio.create_task(actions.press_keys(int(Keys.SPRINT), duration=10))
+    await asyncio.sleep(0)  # let task start
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+    assert client.set_keys.call_args.args[0] == 0

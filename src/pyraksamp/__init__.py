@@ -31,6 +31,7 @@ import asyncio
 import inspect
 import random
 from collections.abc import Callable
+from enum import IntFlag
 from typing import Any, overload
 
 from pyraksamp import _core
@@ -110,6 +111,8 @@ from pyraksamp.textdraws import SelectableTextDraw, TextDraw, TextDraws
 __all__ = [
     # Client
     "SAMPBot",
+    # Key constants
+    "Keys",
     # TextDraw types
     "TextDraw",
     "TextDraws",
@@ -286,6 +289,38 @@ RPC_SET_INTERIOR = _core.RPC_SET_INTERIOR
 RPC_WORLD_VEHICLE_ADD = _core.RPC_WORLD_VEHICLE_ADD
 RPC_WORLD_VEHICLE_REMOVE = _core.RPC_WORLD_VEHICLE_REMOVE
 RPC_DEATH_BROADCAST = _core.RPC_DEATH_BROADCAST
+
+
+class Keys(IntFlag):
+    """SA:MP key bitmask constants for use with :meth:`SAMPBot.send_keys`
+    and :meth:`SAMPBot.press_keys`.
+
+    These map to the ``wKeys`` field in on-foot sync packets.
+    Some bits have different names depending on context (on foot vs. vehicle);
+    members here use the on-foot name.  Vehicle-only aliases are listed in
+    comments for when vehicle support is added.
+    """
+    # ── Shared (on foot & vehicle) ─────────────────────────────────────────────
+    ACTION           = 1        # TAB  / ALT GR
+    CROUCH           = 2        # C    / H
+    FIRE             = 4        # LCTRL / LALT
+    SPRINT           = 8        # SPACE / W
+    SECONDARY_ATTACK = 16       # ENTER / ENTER
+    JUMP             = 32       # LSHIFT / S
+    YES              = 65536    # Y
+    NO               = 131072   # N
+    CTRL_BACK        = 262144   # H
+
+    # ── On-foot only (same bit = different vehicle key, noted in comment) ───────
+    LOOK_RIGHT       = 64       # E           (veh: —)
+    AIM              = 128      # RMB         (veh: HANDBRAKE = 128)
+    LOOK_LEFT        = 256      # Q           (veh: —)
+    SUBMISSION       = 512      # NUM1        (veh: LOOK_BEHIND = 512)
+    WALK             = 1024     # LALT        (veh: —)
+    ANALOG_UP        = 2048     # NUM8
+    ANALOG_DOWN      = 4096     # NUM2
+    ANALOG_LEFT      = 8192     # NUM4
+    ANALOG_RIGHT     = 16384    # NUM6
 
 
 def gen_gpci() -> str:
@@ -1071,6 +1106,51 @@ class SAMPBot:
     def click_textdraw(self, textdraw_id: int) -> None:
         """Send SelectTextDraw RPC (83) for the given textdraw ID."""
         self._actions.click_textdraw(textdraw_id)
+
+    def send_keys(
+        self,
+        keys: Keys | int,
+        lr_analog: int = 0,
+        ud_analog: int = 0,
+    ) -> None:
+        """Directly set the key state in on-foot sync packets (sticky).
+
+        The state persists across keepalive packets until called again.
+        Bypasses the ref-counting used by :meth:`press_keys`.
+
+        Parameters
+        ----------
+        keys
+            Bitmask of pressed keys; combine :class:`Keys` members with ``|``.
+        lr_analog
+            Left/right analog axis (0 = neutral, negative = left, positive = right).
+        ud_analog
+            Up/down analog axis (0 = neutral, negative = up, positive = down).
+        """
+        self._actions.send_keys(int(keys), lr_analog, ud_analog)
+
+    async def press_keys(
+        self,
+        keys: Keys | int,
+        duration: float = 0.5,
+    ) -> None:
+        """Hold *keys* for *duration* seconds, then auto-release.
+
+        Safe to call concurrently from multiple handlers. Each call only
+        releases its own bits; keys held by other concurrent calls are
+        unaffected. The same key pressed by two concurrent calls stays
+        pressed until the last one finishes (ref-counted per bit).
+
+        For fire-and-forget (non-blocking), wrap with ``asyncio.create_task``.
+
+        Parameters
+        ----------
+        keys
+            Bitmask of keys to press; combine :class:`Keys` members with ``|``.
+        duration
+            Seconds to hold (default 0.5 s = one keepalive interval).
+        """
+        await self._actions.press_keys(int(keys), duration)
 
 
 # Backwards-compatibility alias

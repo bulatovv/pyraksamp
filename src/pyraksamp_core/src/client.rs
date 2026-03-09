@@ -263,6 +263,9 @@ pub struct SampClient {
     spectating:    AtomicBool,
     send_msg_num:  AtomicU16,
     ordering_idx:  AtomicU16,
+    keys:          AtomicU16,
+    lr_analog:     AtomicU16,
+    ud_analog:     AtomicU16,
 
     // Protected state
     player_id:    Mutex<i32>,
@@ -293,6 +296,9 @@ impl SampClient {
             spectating:   AtomicBool::new(false),
             send_msg_num: AtomicU16::new(0),
             ordering_idx: AtomicU16::new(0),
+            keys:         AtomicU16::new(0),
+            lr_analog:    AtomicU16::new(0),
+            ud_analog:    AtomicU16::new(0),
             player_id:    Mutex::new(-1),
             challenge:    Mutex::new(0),
             pending_acks: Mutex::new(Vec::new()),
@@ -975,6 +981,10 @@ impl SampClient {
         // wSurfInfo(u16) animID(i32)
         let mut pkt = vec![0u8; 1 + 68];
         pkt[0] = ID_PLAYER_SYNC;
+        // lrAnalog at offset 0, udAnalog at offset 2, wKeys at offset 4
+        pkt[1..3].copy_from_slice(&self.lr_analog.load(Ordering::Relaxed).to_le_bytes());
+        pkt[3..5].copy_from_slice(&self.ud_analog.load(Ordering::Relaxed).to_le_bytes());
+        pkt[5..7].copy_from_slice(&self.keys.load(Ordering::Relaxed).to_le_bytes());
         // vecPos.z = 3.0 at offset 14
         pkt[1 + 14..1 + 18].copy_from_slice(&3.0f32.to_le_bytes());
         // fQuaternion.w = 1.0 at offset 30
@@ -1151,6 +1161,14 @@ impl SampClient {
         let mut bs = BitStream::new();
         bs.write_uint16_le(textdraw_id);
         self.send_rpc(RPC_TEXTDRAW_SELECT, bs.as_bytes(), REL_RELIABLE_ORDERED);
+    }
+
+    /// Set the key state reported in on-foot sync packets.
+    /// Values persist across keepalive sends until changed again.
+    pub fn set_keys(&self, keys: u16, lr_analog: u16, ud_analog: u16) {
+        self.keys.store(keys, Ordering::Relaxed);
+        self.lr_analog.store(lr_analog, Ordering::Relaxed);
+        self.ud_analog.store(ud_analog, Ordering::Relaxed);
     }
 }
 

@@ -577,6 +577,11 @@ impl PySAMPClient {
     fn click_textdraw(&self, textdraw_id: u16) {
         self.inner.click_textdraw(textdraw_id);
     }
+
+    #[pyo3(signature = (keys, lr_analog=0, ud_analog=0))]
+    fn set_keys(&self, keys: u16, lr_analog: u16, ud_analog: u16) {
+        self.inner.set_keys(keys, lr_analog, ud_analog);
+    }
 }
 
 // ── Module ────────────────────────────────────────────────────────────────────
