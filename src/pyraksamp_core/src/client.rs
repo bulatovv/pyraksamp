@@ -1207,8 +1207,10 @@ fn recv_one(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, relay_v4: Opt
     let src_v4 = match src.ip() { IpAddr::V4(v) => v, _ => return None };
 
     match relay_v4 {
-        Some(relay) => {
-            if src_v4 != relay { return None; }
+        Some(_relay) => {
+            // Accept from any source: some proxies relay UDP from a different IP
+            // than the one advertised in the UDP ASSOCIATE reply.  The embedded
+            // SOCKS5 header is the authoritative source-address check.
             let (origin, hdr_len) = socks5::unwrap_packet(&buf[..n])?;
             if origin != server_v4 { return None; }
             buf.copy_within(hdr_len..n, 0);
