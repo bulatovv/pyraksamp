@@ -1,0 +1,400 @@
+"""SampShellApp — main Textual application for the pyraksamp shell."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import shlex
+import traceback
+from typing import TYPE_CHECKING, ClassVar
+
+from textual.app import App, ComposeResult
+from textual import on
+from textual.binding import Binding
+from textual.widgets import Static, Rule, Label
+from textual.containers import Horizontal
+
+from pyraksamp.dialogs import AnyDialog
+from pyraksamp.events import (
+    ChatMessage,
+    PlayerJoin,
+    PlayerQuit,
+    ServerMessage,
+    SetPosition,
+)
+from pyraksamp.shell._commands import CommandRegistry
+from pyraksamp.shell._widgets import (
+    ChatInput,
+    EventLog,
+    StatusBar,
+    TextdrawPanel,
+    _strip_colors,
+)
+
+if TYPE_CHECKING:
+    from pyraksamp import SAMPBot
+
+
+class _ShellLogHandler(logging.Handler):
+    """Logging handler that writes records to EventLog."""
+
+    def __init__(self, app: SampShellApp) -> None:
+        super().__init__()
+        self._app = app
+
+    def emit(self, record: logging.LogRecord) -> None:
+        msg = self.format(record)
+        level = record.levelname.lower()
+        style_map = {
+            "debug": "dim",
+            "info": "",
+            "warning": "warning",
+            "error": "error",
+            "critical": "error",
+        }
+        style = style_map.get(level, "")
+        try:
+            asyncio.ensure_future(self._app._event_log.append_line(msg, style=style))
+        except Exception:
+            pass
+
+
+class SampShellApp(App):
+    """In-process TUI shell for SAMPBot."""
+
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("alt+left", "prev_dialog", "Prev dialog", show=False),
+        Binding("alt+right", "next_dialog", "Next dialog", show=False),
+        Binding("ctrl+q", "none", "Quit", show=False),  # Unbind ctrl+q
+    ]
+
+    CSS = """
+    Screen {
+        layout: vertical;
+        height: 30;
+        background: transparent;
+        scrollbar-size: 0 0;
+    }
+    #input-hint {
+        height: 1;
+        color: ansi_yellow;
+        padding: 0 1;
+        background: transparent;
+    }
+    #input-sep, #input-sep-bottom {
+        height: 1;
+        color: ansi_bright_black;
+        margin: 0;
+        padding: 0;
+    }
+    #input-bar {
+        height: 1;
+    }
+    #input-prefix {
+        width: 2;
+        height: 1;
+        padding: 0;
+    }
+    #input-bar ChatInput {
+        width: 1fr;
+    }
+    """
+
+    def __init__(self, bot: SAMPBot, commands: CommandRegistry, **kwargs) -> None:
+        kwargs.setdefault("ansi_color", True)
+        super().__init__(**kwargs)
+        self._bot = bot
+        self._commands = commands
+        self._bus_q: asyncio.Queue = asyncio.Queue()
+        self._event_task: asyncio.Task | None = None
+        self._log_handler: _ShellLogHandler | None = None
+        self._textdraw_panel: TextdrawPanel | None = None
+        self._exit_timer: asyncio.TimerHandle | None = None
+
+        # Bot state mirror
+        self._players: dict[int, str] = {}
+        self._connected_at: float = 0.0
+        self._health: float = 100.0
+        self._armour: float = 0.0
+        self._pos: tuple[float, float, float] = (0.0, 0.0, 0.0)
+        self._dialog_history: list[AnyDialog] = []
+
+    def compose(self) -> ComposeResult:
+        self._event_log = EventLog()
+        self._chat_input = ChatInput()
+        self._status_bar = StatusBar()
+        self._input_prefix = Static(">", id="input-prefix")
+        self._input_hint = Label("", id="input-hint")
+        yield self._event_log
+        yield self._input_hint
+        yield Rule(id="input-sep")
+        with Horizontal(id="input-bar"):
+            yield self._input_prefix
+            yield self._chat_input
+        yield Rule(id="input-sep-bottom")
+        yield self._status_bar
+
+    async def on_mount(self) -> None:
+        # Subscribe BEFORE starting (or attaching to) the bot so no events are missed.
+        self._bot.subscribe(self._bus_q)
+        self._event_task = asyncio.create_task(self._consume_events())
+
+        self._log_handler = _ShellLogHandler(self)
+        logging.getLogger().addHandler(self._log_handler)
+        self._chat_input.focus()
+
+        if not self._bot._started:
+            # Start bot from within the TUI; subscription is already live.
+            asyncio.create_task(self._do_connect())
+        elif self._bot.is_connected:
+            self._status_bar.connected = True
+            await self._event_log.append_line(
+                "Attached to already-connected bot (events before this point not shown).",
+                style="dim",
+            )
+
+    async def _do_connect(self) -> None:
+        await self._event_log.append_line("Connecting...", style="dim")
+        try:
+            await self._bot.start()
+        except Exception as exc:
+            await self._event_log.append_line(
+                f"Connection failed: {exc}", style="error"
+            )
+            self.exit(1)
+
+    async def on_unmount(self) -> None:
+        if self._exit_timer:
+            self._exit_timer.cancel()
+        if self._event_task:
+            self._event_task.cancel()
+        self._bot.unsubscribe(self._bus_q)
+        if self._log_handler:
+            logging.getLogger().removeHandler(self._log_handler)
+
+        # Ensure bot disconnects and stops on TUI exit.
+        if self._bot.is_connected:
+            self._bot.disconnect()
+        self._bot.stop()
+
+    # ── Public helpers for commands ────────────────────────────────────────────
+
+    def set_hint(self, text: str, *, dim: bool = False) -> None:
+        """Update the input hint label."""
+        if text and dim:
+            self._input_hint.update(f"[dim]{text}[/dim]")
+        else:
+            self._input_hint.update(text)
+
+    def log_line(self, text: str, *, style: str = "") -> None:
+        """Schedule a log line append (safe to call from commands)."""
+        asyncio.ensure_future(self._event_log.append_line(text, style=style))
+
+    def toggle_textdraws(self) -> None:
+        """Mount or unmount the TextdrawPanel."""
+        if self._textdraw_panel is not None:
+            self._textdraw_panel.remove()
+            self._textdraw_panel = None
+            self._chat_input.focus()
+        else:
+            panel = TextdrawPanel(self._bot)
+            self._textdraw_panel = panel
+            self.mount(panel, before=self._chat_input)
+            panel.focus()
+
+    async def _watch_dialog_response(self, dlg, group) -> None:
+        """Reset cascade timer when a dialog is auto-responded by the bot."""
+        while not dlg.is_responded:
+            await asyncio.sleep(0.05)
+        if not group.is_sealed:
+            group._reset_cascade_timer()
+
+    def action_prev_dialog(self) -> None:
+        g = self._event_log._active_group
+        if g is not None:
+            g.action_prev_pane()
+            g._update_nav()
+
+    def action_next_dialog(self) -> None:
+        g = self._event_log._active_group
+        if g is not None:
+            g.action_next_pane()
+            g._update_nav()
+
+    async def on_key(self, event) -> None:
+        if event.key == "ctrl+c":
+            event.prevent_default()
+            if self._exit_timer:
+                self.exit()
+            else:
+                self.set_hint("Press Ctrl+C again to exit")
+                self._exit_timer = asyncio.get_event_loop().call_later(
+                    4.0, self._clear_exit_hint
+                )
+        elif event.key == "ctrl+q":
+            # Unbind ctrl+q
+            event.prevent_default()
+
+    def _clear_exit_hint(self) -> None:
+        self._exit_timer = None
+        # Only clear if we are not currently showing a dialog nav hint
+        g = self._event_log._active_group
+        if g is None or len(g._panes) <= 1:
+            self.set_hint("")
+
+    # ── Event consumption ──────────────────────────────────────────────────────
+
+    async def _consume_events(self) -> None:
+        try:
+            while True:
+                event = await self._bus_q.get()
+                tag = event[0]
+                if tag == "disconnect":
+                    await self._event_log.append_line(
+                        "Disconnected from server.", style="error"
+                    )
+                    self._status_bar.connected = False
+                    break
+                try:
+                    await self._route(tag, event)
+                except Exception as exc:
+                    tb = traceback.format_exc()
+                    await self._event_log.append_line(
+                        f"[TUI error routing {tag!r}: {exc}]\n{tb}", style="error"
+                    )
+        except asyncio.CancelledError:
+            pass
+
+    @staticmethod
+    def _is_junk_dialog(dlg: AnyDialog) -> bool:
+        if dlg.dialog_id == 65535:
+            return True
+        if not (dlg.button1 or "").strip() and not (dlg.button2 or "").strip():
+            return True
+
+        title = _strip_colors(getattr(dlg, "title", "") or "").strip()
+
+        # List-style dialogs (2, 4, 5) are defined by their rows, not a 'body' text.
+        if dlg.style in (2, 4, 5):
+            return not title and len(getattr(dlg, "rows", [])) == 0
+
+        body = _strip_colors(getattr(dlg, "body", "") or "").strip()
+        return not title and not body
+
+    async def _route(self, tag: str, event: tuple) -> None:
+        if tag == "connect":
+            import time
+
+            self._connected_at = time.monotonic()
+            await self._event_log.append_line("Connected to server.", style="join")
+            self._status_bar.connected = True
+
+        elif tag == "chat":
+            msg: ChatMessage = event[1]
+            name = self._players.get(msg.player_id, f"[{msg.player_id}]")
+            await self._event_log.append_line(
+                f"[CHAT] {name}: [ansi_white]{msg.text}[/ansi_white]", style="chat"
+            )
+
+        elif tag == "client_message":
+            msg: ServerMessage = event[1]
+            await self._event_log.append_line(msg.text, style="server")
+
+        elif tag == "player_join":
+            import time
+
+            evt: PlayerJoin = event[1]
+            self._players[evt.player_id] = evt.name
+            self._status_bar.players = len(self._players)
+            if time.monotonic() - self._connected_at > 10.0:
+                await self._event_log.append_line(
+                    f"→ {evt.name} ({evt.player_id})", style="join"
+                )
+
+        elif tag == "player_quit":
+            import time
+
+            evt: PlayerQuit = event[1]
+            name = self._players.pop(evt.player_id, f"[{evt.player_id}]")
+            self._status_bar.players = len(self._players)
+            if time.monotonic() - self._connected_at > 10.0:
+                await self._event_log.append_line(
+                    f"← {name} ({evt.player_id})", style="quit"
+                )
+
+        elif tag == "dialog":
+            dlg: AnyDialog = event[1]
+            logging.warning(
+                f"DIALOG: id={dlg.dialog_id} style={dlg.style} title={dlg.title!r}"
+            )
+            if self._is_junk_dialog(dlg):
+                return
+            self._dialog_history.append(dlg)
+            group = await self._event_log.get_or_create_dialog_group()
+            await group.add_dialog(dlg)
+            asyncio.ensure_future(self._watch_dialog_response(dlg, group))
+
+        elif tag == "set_health":
+            self._health = event[1].health
+            self._status_bar.hp = event[1].health
+
+        elif tag == "set_armour":
+            self._armour = event[1].armour
+            self._status_bar.armour = event[1].armour
+
+        elif tag == "set_position":
+            evt: SetPosition = event[1]
+            self._pos = (evt.x, evt.y, evt.z)
+            self._status_bar.pos = self._pos
+
+    # ── Chat input handler ─────────────────────────────────────────────────────
+
+    @on(ChatInput.ModeChanged)
+    def _on_mode_changed(self, event: ChatInput.ModeChanged) -> None:
+        if event.mode == "command":
+            self._input_prefix.update(":")
+        elif event.mode == "sampcmd":
+            self._input_prefix.update("/")
+        else:
+            self._input_prefix.update(">")
+
+    @on(ChatInput.Submitted)
+    async def _on_chat_submitted(self, event: ChatInput.Submitted) -> None:
+        text = event.value.strip()
+        is_samp_command = self._chat_input.samp_mode or text.startswith("/")
+        is_tui_command = self._chat_input.command_mode or text.startswith(":")
+
+        self._chat_input.clear()
+        if not text:
+            return
+
+        if is_tui_command:
+            parts = shlex.split(text.lstrip(":"))
+            if not parts:
+                return
+            cmd_name = parts[0]
+            args = parts[1:]
+            cmd = self._commands.get(cmd_name)
+            if cmd is None:
+                await self._event_log.append_line(
+                    f"Unknown command: :{cmd_name}  (type :help for list)",
+                    style="error",
+                )
+            else:
+                try:
+                    await cmd.fn(args, self)
+                except Exception as exc:
+                    await self._event_log.append_line(
+                        f"Command error: {exc}", style="error"
+                    )
+        elif is_samp_command:
+            try:
+                cmd_text = text if text.startswith("/") else f"/{text}"
+                self._bot.send_command(cmd_text)
+            except Exception as exc:
+                await self._event_log.append_line(f"Send error: {exc}", style="error")
+        else:
+            try:
+                self._bot.send_chat(text)
+            except Exception as exc:
+                await self._event_log.append_line(f"Send error: {exc}", style="error")

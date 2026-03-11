@@ -1,6 +1,12 @@
 """Typed event objects yielded by SAMPBot's async generators."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pyraksamp.colors import ColoredString
 
 __all__ = [
     "ChatMessage",
@@ -43,7 +49,7 @@ class ChatMessage:
 
     player_id: int
     raw: bytes
-    text: str
+    text: ColoredString
 
 
 @dataclass(slots=True, frozen=True)
@@ -52,7 +58,7 @@ class ServerMessage:
 
     color: int  # 0xRRGGBBAA
     raw: bytes
-    text: str
+    text: ColoredString
 
 
 @dataclass(slots=True, frozen=True)

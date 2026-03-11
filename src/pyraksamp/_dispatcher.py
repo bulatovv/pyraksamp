@@ -1,8 +1,22 @@
 """_Dispatcher — single-subscription event router for _EventBus."""
 
 import asyncio
+import inspect
+from collections.abc import Callable
 
 _STOP = object()  # sentinel: tells listeners to terminate
+
+
+async def _run_post_middlewares(event_obj, middlewares):
+    for fn in middlewares:
+        result = fn(event_obj)
+        if inspect.isawaitable(result):
+            await result
+
+
+async def _wait_then_run(futures, event_obj, middlewares):
+    await asyncio.gather(*futures)
+    await _run_post_middlewares(event_obj, middlewares)
 
 
 class _Dispatcher:
@@ -11,6 +25,7 @@ class _Dispatcher:
         self._q: asyncio.Queue = asyncio.Queue()
         self._bus.subscribe(self._q)
         self._routes: list[tuple[str, object, object, asyncio.Queue]] = []
+        self._post_middlewares: list[tuple[str, Callable]] = []
         self._task: asyncio.Task | None = None
 
     def start(self) -> None:
@@ -31,7 +46,12 @@ class _Dispatcher:
     def unregister(self, q: asyncio.Queue) -> None:
         self._routes = [(t, p, ex, rq) for t, p, ex, rq in self._routes if rq is not q]
 
+    def add_post_middleware(self, tag: str, fn: Callable) -> None:
+        """Register a post-middleware called after all handlers for *tag* finish."""
+        self._post_middlewares.append((tag, fn))
+
     async def _run(self) -> None:
+        loop = asyncio.get_running_loop()
         try:
             while True:
                 event = await self._q.get()
@@ -39,11 +59,20 @@ class _Dispatcher:
                     for _t, _p, _ex, rq in self._routes:
                         rq.put_nowait(_STOP)
                     return
+                mws = [fn for mtag, fn in self._post_middlewares if mtag == event[0]]
+                futures = []
                 for rtag, pred, extract, rq in self._routes:
                     if rtag != event[0]:
                         continue
                     args = extract(event)
                     if pred is None or pred(*args):
-                        rq.put_nowait(args)
+                        if mws:
+                            fut = loop.create_future()
+                            futures.append(fut)
+                        else:
+                            fut = None
+                        rq.put_nowait((args, fut))
+                if mws and futures:
+                    asyncio.ensure_future(_wait_then_run(futures, event[1], mws))
         finally:
             self._bus.unsubscribe(self._q)

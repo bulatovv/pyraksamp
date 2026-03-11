@@ -25,9 +25,12 @@ class _StreamListener:
         q = self._dispatcher.register(self._tag, self._predicate)
         try:
             while True:
-                args = await q.get()
-                if args is _STOP:
+                item = await q.get()
+                if item is _STOP:
                     return
+                args, fut = item
+                if fut is not None and not fut.done():
+                    fut.set_result(None)
                 yield args[0]
         finally:
             self._dispatcher.unregister(q)
@@ -53,13 +56,18 @@ class _CallbackListener:
     async def _run(self) -> None:
         try:
             while True:
-                args = await self._q.get()
-                if args is _STOP:
+                item = await self._q.get()
+                if item is _STOP:
                     return
-                if inspect.iscoroutinefunction(self._fn):
-                    await self._fn(*args)
-                else:
-                    self._fn(*args)
+                args, fut = item
+                try:
+                    if inspect.iscoroutinefunction(self._fn):
+                        await self._fn(*args)
+                    else:
+                        self._fn(*args)
+                finally:
+                    if fut is not None and not fut.done():
+                        fut.set_result(None)
         finally:
             self._dispatcher.unregister(self._q)
 

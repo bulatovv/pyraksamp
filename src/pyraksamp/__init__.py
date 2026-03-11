@@ -1153,6 +1153,93 @@ class SAMPBot:
         """
         await self._actions.press_keys(int(keys), duration)
 
+    # ── Bus pub/sub (public) ───────────────────────────────────────────────────
+
+    def subscribe(self, q: asyncio.Queue) -> None:
+        """Subscribe *q* to the event bus; receives every raw event tuple."""
+        self._bus.subscribe(q)
+
+    def unsubscribe(self, q: asyncio.Queue) -> None:
+        """Unsubscribe *q* from the event bus."""
+        self._bus.unsubscribe(q)
+
+    # ── Post-middleware ────────────────────────────────────────────────────────
+
+    def add_post_middleware(self, fn: Callable, *, tag: str = "dialog") -> None:
+        """Register *fn* as a post-middleware for events with *tag*.
+
+        *fn* is called with the event object after **all** registered handlers
+        for that event have finished.  Can be sync or async.
+
+        Parameters
+        ----------
+        fn
+            Callable (sync or async) that receives the event object.
+        tag
+            Event tag to listen for (default ``"dialog"``).
+        """
+        self._dispatcher.add_post_middleware(tag, fn)
+
+    def post_middleware(self, fn: Callable | None = None, *, tag: str = "dialog"):
+        """Decorator that registers a post-middleware for *tag* events.
+
+        Can be used with or without arguments::
+
+            @bot.post_middleware
+            async def after_dialog(dlg):
+                ...
+
+            @bot.post_middleware(tag="chat")
+            async def after_chat(msg):
+                ...
+        """
+
+        def decorator(f: Callable) -> Callable:
+            self._dispatcher.add_post_middleware(tag, f)
+            return f
+
+        return decorator(fn) if fn is not None else decorator
+
+    # ── Remote shell ───────────────────────────────────────────────────────────
+
+    async def expose_shell(self, path: str | None = None) -> asyncio.Server:
+        """Start an in-process TUI and expose it via a Unix socket relay.
+
+        The TUI runs in the same asyncio loop using a PTY.  A thin relay
+        client (``pyraksamp shell --attach [SOCK]``) can connect to forward
+        ANSI bytes to its terminal and send keystrokes back.
+
+        Parameters
+        ----------
+        path
+            Unix socket path.  Defaults to ``/tmp/pyraksamp-<pid>.sock``.
+
+        Returns
+        -------
+        asyncio.Server
+            The relay server (call ``.close()`` to stop accepting).
+        """
+        import os
+        import pty
+
+        from pyraksamp.shell._app import SampShellApp
+        from pyraksamp.shell._commands import CommandRegistry, _register_builtins
+        from pyraksamp.shell._pty import _relay_client, make_pty_driver_class
+
+        master_fd, slave_fd = pty.openpty()
+        path = path or f"/tmp/pyraksamp-{os.getpid()}.sock"
+
+        commands = CommandRegistry()
+        _register_builtins(commands)
+        driver_cls = make_pty_driver_class(slave_fd)
+        app = SampShellApp(self, commands, driver_class=driver_cls)
+        asyncio.create_task(app.run_async())
+
+        server = await asyncio.start_unix_server(
+            lambda r, w: _relay_client(master_fd, r, w), path
+        )
+        return server
+
 
 # Backwards-compatibility alias
 SAMPClient = SAMPBot

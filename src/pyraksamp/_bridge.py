@@ -70,14 +70,22 @@ def _setup_bridge(
         loop.call_soon_threadsafe(lambda: bus.broadcast(("player_quit", evt)))
 
     def on_chat(pid: int, raw: bytes):
+        from pyraksamp.colors import ColoredString
+
         evt = ChatMessage(
-            player_id=pid, raw=raw, text=raw.decode(encoding, errors="replace")
+            player_id=pid,
+            raw=raw,
+            text=ColoredString(raw.decode(encoding, errors="replace")),
         )
         loop.call_soon_threadsafe(lambda: bus.broadcast(("chat", evt)))
 
     def on_client_message(color: int, raw: bytes):
+        from pyraksamp.colors import ColoredString
+
         evt = ServerMessage(
-            color=color, raw=raw, text=raw.decode(encoding, errors="replace")
+            color=color,
+            raw=raw,
+            text=ColoredString(raw.decode(encoding, errors="replace")),
         )
         loop.call_soon_threadsafe(lambda: bus.broadcast(("client_message", evt)))
 

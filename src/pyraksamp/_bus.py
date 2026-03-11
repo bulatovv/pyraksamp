@@ -13,7 +13,8 @@ class _EventBus:
         self._subscribers.append(q)
 
     def unsubscribe(self, q: asyncio.Queue) -> None:
-        self._subscribers.remove(q)
+        if q in self._subscribers:
+            self._subscribers.remove(q)
 
     def broadcast(self, event: tuple) -> None:
         for q in self._subscribers:

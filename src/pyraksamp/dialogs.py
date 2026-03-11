@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
+if TYPE_CHECKING:
+    from pyraksamp.colors import ColoredString
 
 __all__ = [
     "AnyDialog",
@@ -59,7 +61,7 @@ class _Responder:
 class Button:
     """A dialog button. SA:MP IDs: 1 = first/OK, 0 = second/Cancel."""
 
-    label: str
+    label: ColoredString
     id: int
     _dialog_id: int = field(repr=False, compare=False)
     _responder: _Responder = field(repr=False, compare=False)
@@ -101,7 +103,10 @@ class ButtonSelector:
 
 
 def _make_buttons(
-    dialog_id: int, button1: str, button2: str, responder: _Responder
+    dialog_id: int,
+    button1: ColoredString,
+    button2: ColoredString,
+    responder: _Responder,
 ) -> ButtonSelector:
     # [0]=left/OK (wire id=1), [1]=right/Cancel (wire id=0)
     left = Button(label=button1, id=1, _dialog_id=dialog_id, _responder=responder)
@@ -118,7 +123,7 @@ def _make_buttons(
 class ListRow:
     """A single row in a list dialog."""
 
-    text: str
+    text: ColoredString
     index: int
     _dialog_id: int = field(repr=False, compare=False)
     _responder: _Responder = field(repr=False, compare=False)
@@ -134,7 +139,7 @@ class ListRow:
 class TablistRow:
     """A single row in a tablist dialog, with tab-separated column values."""
 
-    columns: tuple[str, ...]
+    columns: tuple[ColoredString, ...]
     index: int
     _dialog_id: int = field(repr=False, compare=False)
     _responder: _Responder = field(repr=False, compare=False)
@@ -145,10 +150,10 @@ class TablistRow:
             self._dialog_id, button=1, list_item=self.index
         )
 
-    def __getitem__(self, col: int) -> str:
+    def __getitem__(self, col: int) -> ColoredString:
         return self.columns[col]
 
-    def __iter__(self) -> Iterator[str]:
+    def __iter__(self) -> Iterator[ColoredString]:
         return iter(self.columns)
 
 
@@ -192,10 +197,10 @@ class MsgboxDialog:
 
     style: ClassVar[Literal[0]] = 0
     dialog_id: int
-    title: str
-    body: str
-    button1: str
-    button2: str
+    title: ColoredString
+    body: ColoredString
+    button1: ColoredString
+    button2: ColoredString
     buttons: ButtonSelector
     _responder: _Responder = field(repr=False, compare=False)
 
@@ -218,10 +223,10 @@ class InputDialog:
 
     style: ClassVar[Literal[1]] = 1
     dialog_id: int
-    title: str
-    body: str
-    button1: str
-    button2: str
+    title: ColoredString
+    body: ColoredString
+    button1: ColoredString
+    button2: ColoredString
     buttons: ButtonSelector
     _responder: _Responder = field(repr=False, compare=False)
 
@@ -244,10 +249,10 @@ class PasswordDialog:
 
     style: ClassVar[Literal[3]] = 3
     dialog_id: int
-    title: str
-    body: str
-    button1: str
-    button2: str
+    title: ColoredString
+    body: ColoredString
+    button1: ColoredString
+    button2: ColoredString
     buttons: ButtonSelector
     _responder: _Responder = field(repr=False, compare=False)
 
@@ -270,9 +275,9 @@ class ListDialog:
 
     style: ClassVar[Literal[2]] = 2
     dialog_id: int
-    title: str
-    button1: str
-    button2: str
+    title: ColoredString
+    button1: ColoredString
+    button2: ColoredString
     rows: RowSelector[ListRow]
     _responder: _Responder = field(repr=False, compare=False)
 
@@ -291,9 +296,9 @@ class TablistDialog:
 
     style: ClassVar[Literal[4]] = 4
     dialog_id: int
-    title: str
-    button1: str
-    button2: str
+    title: ColoredString
+    button1: ColoredString
+    button2: ColoredString
     rows: RowSelector[TablistRow]
     _responder: _Responder = field(repr=False, compare=False)
 
@@ -312,10 +317,10 @@ class TablistHeadersDialog:
 
     style: ClassVar[Literal[5]] = 5
     dialog_id: int
-    title: str
-    button1: str
-    button2: str
-    headers: tuple[str, ...]
+    title: ColoredString
+    button1: ColoredString
+    button2: ColoredString
+    headers: tuple[ColoredString, ...]
     rows: RowSelector[TablistRow]
     _responder: _Responder = field(repr=False, compare=False)
 
@@ -350,50 +355,62 @@ def _make_dialog(
     body: str,
     responder: _Responder,
 ) -> AnyDialog:
-    buttons = _make_buttons(did, btn1, btn2, responder)
+    from pyraksamp.colors import ColoredString
+
+    t = ColoredString(title)
+    b1 = ColoredString(btn1)
+    b2 = ColoredString(btn2)
+    bdy = ColoredString(body)
+
+    buttons = _make_buttons(did, b1, b2, responder)
 
     if style == 0:
         return MsgboxDialog(
             dialog_id=did,
-            title=title,
-            body=body,
-            button1=btn1,
-            button2=btn2,
+            title=t,
+            body=bdy,
+            button1=b1,
+            button2=b2,
             buttons=buttons,
             _responder=responder,
         )
     if style == 1:
         return InputDialog(
             dialog_id=did,
-            title=title,
-            body=body,
-            button1=btn1,
-            button2=btn2,
+            title=t,
+            body=bdy,
+            button1=b1,
+            button2=b2,
             buttons=buttons,
             _responder=responder,
         )
     if style == 3:
         return PasswordDialog(
             dialog_id=did,
-            title=title,
-            body=body,
-            button1=btn1,
-            button2=btn2,
+            title=t,
+            body=bdy,
+            button1=b1,
+            button2=b2,
             buttons=buttons,
             _responder=responder,
         )
     if style == 2:
         rows: RowSelector[ListRow] = RowSelector(
             [
-                ListRow(text=line, index=i, _dialog_id=did, _responder=responder)
+                ListRow(
+                    text=ColoredString(line),
+                    index=i,
+                    _dialog_id=did,
+                    _responder=responder,
+                )
                 for i, line in enumerate(ln for ln in body.split("\n") if ln)
             ]
         )
         return ListDialog(
             dialog_id=did,
-            title=title,
-            button1=btn1,
-            button2=btn2,
+            title=t,
+            button1=b1,
+            button2=b2,
             rows=rows,
             _responder=responder,
         )
@@ -401,7 +418,7 @@ def _make_dialog(
         rows_t: RowSelector[TablistRow] = RowSelector(
             [
                 TablistRow(
-                    columns=tuple(line.split("\t")),
+                    columns=tuple(ColoredString(c) for c in line.split("\t")),
                     index=i,
                     _dialog_id=did,
                     _responder=responder,
@@ -411,19 +428,19 @@ def _make_dialog(
         )
         return TablistDialog(
             dialog_id=did,
-            title=title,
-            button1=btn1,
-            button2=btn2,
+            title=t,
+            button1=b1,
+            button2=b2,
             rows=rows_t,
             _responder=responder,
         )
     if style == 5:
         lines = [ln for ln in body.split("\n") if ln]
-        headers = tuple(lines[0].split("\t")) if lines else ()
+        headers = tuple(ColoredString(h) for h in lines[0].split("\t")) if lines else ()
         rows_th: RowSelector[TablistRow] = RowSelector(
             [
                 TablistRow(
-                    columns=tuple(line.split("\t")),
+                    columns=tuple(ColoredString(c) for c in line.split("\t")),
                     index=i,
                     _dialog_id=did,
                     _responder=responder,
@@ -433,9 +450,9 @@ def _make_dialog(
         )
         return TablistHeadersDialog(
             dialog_id=did,
-            title=title,
-            button1=btn1,
-            button2=btn2,
+            title=t,
+            button1=b1,
+            button2=b2,
             headers=headers,
             rows=rows_th,
             _responder=responder,
@@ -443,10 +460,10 @@ def _make_dialog(
     # Unknown style — treat as msgbox
     return MsgboxDialog(
         dialog_id=did,
-        title=title,
-        body=body,
-        button1=btn1,
-        button2=btn2,
+        title=t,
+        body=bdy,
+        button1=b1,
+        button2=b2,
         buttons=buttons,
         _responder=responder,
     )
