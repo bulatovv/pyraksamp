@@ -212,6 +212,7 @@ class DialogWidget(Vertical):
         outline: none;
     }
     DialogWidget.responded Input {
+        background: transparent;
         color: ansi_white;
         text-style: dim;
         border: round ansi_bright_black;
@@ -220,9 +221,49 @@ class DialogWidget(Vertical):
         color: ansi_white;
         text-style: dim;
     }
+    DialogWidget DataTable {
+        height: auto;
+        background: transparent;
+        border: none;
+        margin: 1 0;
+    }
+    DialogWidget .datatable-header {
+        height: 1;
+        color: ansi_white;
+        text-style: bold;
+        padding: 0 0;
+        background: transparent;
+    }
+    DialogWidget DataTable > .datatable--cursor {
+        background: ansi_bright_black 30%;
+    }
+    DialogWidget DataTable:focus > .datatable--cursor {
+        background: ansi_yellow;
+        color: ansi_black;
+        text-style: bold;
+    }
+    DialogWidget DataTable > .datatable--hover {
+        background: ansi_white 10%;
+    }
+    DialogWidget DataTable > .datatable--odd-row {
+        background: transparent;
+    }
+    DialogWidget DataTable > .datatable--even-row {
+        background: transparent;
+    }
     DialogWidget.responded DataTable {
+        background: transparent;
         color: ansi_white;
         text-style: dim;
+    }
+    DialogWidget.responded DataTable > .datatable--cursor {
+        background: transparent;
+    }
+    DialogWidget.responded DataTable > .datatable--odd-row {
+        background: transparent;
+    }
+    DialogWidget.responded DataTable > .datatable--even-row {
+        background: transparent;
     }
     DialogWidget ListView {
         height: auto;
@@ -308,20 +349,10 @@ class DialogWidget(Vertical):
             self._list_widget = lv
             yield lv
 
-        elif isinstance(dlg, TablistDialog):
-            # If 1 column, use ListView for a better "list selector" feel.
-            n_cols = len(dlg.rows[0].columns) if dlg.rows else 0
-            if n_cols == 1:
-                lv = ListView()
-                self._list_widget = lv
-                yield lv
-            else:
-                dt = DataTable()
-                self._list_widget = dt
-                yield dt
-
-        elif isinstance(dlg, TablistHeadersDialog):
-            dt = DataTable()
+        elif isinstance(dlg, (TablistDialog, TablistHeadersDialog)):
+            if isinstance(dlg, TablistHeadersDialog):
+                yield Static("", classes="datatable-header")
+            dt = DataTable(cursor_type="row", show_header=False)
             self._list_widget = dt
             yield dt
 
@@ -346,43 +377,57 @@ class DialogWidget(Vertical):
                     await self._list_widget.append(
                         ListItem(Label(_to_markup(row.text)))
                     )
-            elif isinstance(dlg, TablistDialog):
-                for row in dlg.rows:
-                    await self._list_widget.append(
-                        ListItem(Label(_to_markup(row.columns[0])))
-                    )
-
-        elif isinstance(dlg, TablistDialog) and isinstance(
-            self._list_widget, DataTable
-        ):
+        elif isinstance(self._list_widget, DataTable):
             dt = self._list_widget
-            if dlg.rows:
-                n_cols = len(dlg.rows[0].columns)
-                for i in range(n_cols):
-                    dt.add_column(f"Col {i + 1}")
+            if isinstance(dlg, TablistDialog):
+                if dlg.rows:
+                    for i in range(len(dlg.rows[0].columns)):
+                        dt.add_column("", key=f"col{i}")
+                    for row in dlg.rows:
+                        dt.add_row(*(_to_markup(c) for c in row.columns))
+            elif isinstance(dlg, TablistHeadersDialog):
+                hdr = self.query_one(".datatable-header", Static)
+                headers_plain = [_strip_colors(h) for h in dlg.headers]
+                col_widths = [len(h) for h in headers_plain]
+                for row in dlg.rows:
+                    for i, col in enumerate(row.columns):
+                        col_widths[i] = max(col_widths[i], len(_strip_colors(col)))
+                hdr.update("".join(
+                    f" {h:<{w}} " for h, w in zip(headers_plain, col_widths)
+                ))
+                for i in range(len(dlg.headers)):
+                    dt.add_column("", key=f"col{i}")
                 for row in dlg.rows:
                     dt.add_row(*(_to_markup(c) for c in row.columns))
-        elif isinstance(dlg, TablistHeadersDialog) and isinstance(
-            self._list_widget, DataTable
-        ):
-            dt = self._list_widget
-            for header in dlg.headers:
-                dt.add_column(_to_markup(header))
-            for row in dlg.rows:
-                dt.add_row(*(_to_markup(c) for c in row.columns))
+
+    def on_key(self, event) -> None:
+        if event.key == "escape" and not self._dialog.is_responded:
+            event.prevent_default()
+            event.stop()
+            self._dialog.cancel()
+            self._mark_responded(return_focus=True)
+
+    @on(Input.Submitted)
+    async def _on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        if self._dialog.is_responded:
+            return
+        dlg = self._dialog
+        if isinstance(dlg, (InputDialog, PasswordDialog)):
+            text = self._input_widget.value if self._input_widget else ""
+            dlg.submit(text)
+            self._mark_responded(return_focus=True)
 
     @on(ListView.Selected)
     async def _on_list_selected(self, event: ListView.Selected) -> None:
         event.stop()
         if self._btn1 and not self._dialog.is_responded:
-            # Pass the actual button object so the check in _on_button_pressed passes
             await self._on_button_pressed(Button.Pressed(self._btn1))
 
     @on(DataTable.RowSelected)
     async def _on_table_selected(self, event: DataTable.RowSelected) -> None:
         event.stop()
         if self._btn1 and not self._dialog.is_responded:
-            # Pass the actual button object so the check in _on_button_pressed passes
             await self._on_button_pressed(Button.Pressed(self._btn1))
 
     @on(Button.Pressed)
@@ -390,6 +435,7 @@ class DialogWidget(Vertical):
         event.stop()
         if self._dialog.is_responded:
             return
+        focused = self.has_pseudo_class("focus-within")
         if event.button is self._btn1:
             dlg = self._dialog
             if isinstance(dlg, (InputDialog, PasswordDialog)):
@@ -406,12 +452,18 @@ class DialogWidget(Vertical):
                 dlg.rows[selected_idx].select()
             else:
                 dlg.ok()
-            self._mark_responded()
+            self._mark_responded(return_focus=focused)
         elif event.button is self._btn2:
             self._dialog.cancel()
-            self._mark_responded()
+            self._mark_responded(return_focus=focused)
 
-    def _mark_responded(self) -> None:
+    def _focus_interactive(self) -> None:
+        if self._input_widget is not None:
+            self._input_widget.focus()
+        elif self._list_widget is not None:
+            self._list_widget.focus()
+
+    def _mark_responded(self, *, return_focus: bool = False) -> None:
         self.add_class("responded")
         if self._btn1:
             self._btn1.disabled = True
@@ -420,10 +472,23 @@ class DialogWidget(Vertical):
         if self._input_widget:
             self._input_widget.read_only = True
             self._input_widget.can_focus = False
-        if isinstance(self._list_widget, ListView):
-            self._list_widget.disabled = True
-        elif isinstance(self._list_widget, DataTable):
-            self._list_widget.disabled = True
+        if self._list_widget is not None:
+            self._list_widget.can_focus = False
+        if return_focus:
+            self.set_timer(0.3, self._maybe_return_focus)
+
+    def _maybe_return_focus(self) -> None:
+        from pyraksamp.shell._app import SampShellApp
+
+        group = self.parent
+        if not isinstance(group, DialogGroupWidget):
+            return
+        # If a cascade happened, a new pane is now last — don't steal focus
+        if group._panes[-1] is not self:
+            return
+        if isinstance(self.app, SampShellApp):
+            self.app.set_hint("")
+            self.app._chat_input.focus()
 
     def mark_responded_externally(self) -> None:
         """Called when dialog was responded outside the TUI (e.g. via bot.on_dialog)."""
@@ -466,6 +531,9 @@ class DialogGroupWidget(Vertical):
 
     async def add_dialog(self, dialog: AnyDialog) -> DialogWidget:
         """Add a dialog pane to this group and reset cascade timer."""
+        prev_focused = (
+            self._panes[-1].has_pseudo_class("focus-within") if self._panes else False
+        )
         pane = DialogWidget(dialog)
         self._panes.append(pane)
         # Hide all previous panes; only the newest is shown.
@@ -475,6 +543,8 @@ class DialogGroupWidget(Vertical):
         self._current = len(self._panes) - 1
         self._update_nav()
         self._reset_cascade_timer()
+        if prev_focused:
+            pane._focus_interactive()
         return pane
 
     def _update_nav(self) -> None:
@@ -582,14 +652,14 @@ class EventLog(ScrollableContainer):
         """
         line = LogLine(text, style=style)
         group = self._active_group
-        # Pin before the group only while it has unresponded dialogs.
-        if group is not None and not group.is_responded:
+        # Pin before the group until it is sealed (cascade window has closed).
+        if group is not None and not group.is_sealed:
             await self.mount(line, before=group)
         else:
             await self.mount(line)
         self._line_count += 1
         self._prune()
-        self._auto_scroll()
+        self.call_after_refresh(self._auto_scroll)
 
     async def get_or_create_dialog_group(self) -> DialogGroupWidget:
         """Return the active unsealed group, or create a new one."""
@@ -598,7 +668,7 @@ class EventLog(ScrollableContainer):
         group = DialogGroupWidget()
         await self.mount(group)
         self._active_group = group
-        self._auto_scroll()
+        self.call_after_refresh(self._auto_scroll)
         return group
 
     def _prune(self) -> None:

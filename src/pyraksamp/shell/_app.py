@@ -77,7 +77,7 @@ class SampShellApp(App):
     }
     #input-hint {
         height: 1;
-        color: ansi_yellow;
+        color: ansi_white;
         padding: 0 1;
         background: transparent;
     }
@@ -227,7 +227,7 @@ class SampShellApp(App):
             if self._exit_timer:
                 self.exit()
             else:
-                self.set_hint("Press Ctrl+C again to exit")
+                self.set_hint("[ansi_yellow]Press Ctrl+C again to exit[/]")
                 self._exit_timer = asyncio.get_event_loop().call_later(
                     4.0, self._clear_exit_hint
                 )
@@ -332,6 +332,9 @@ class SampShellApp(App):
             self._dialog_history.append(dlg)
             group = await self._event_log.get_or_create_dialog_group()
             await group.add_dialog(dlg)
+            self._event_log.call_after_refresh(self._event_log._auto_scroll)
+            if self.focused is self._chat_input:
+                self.set_hint("Press Tab to navigate to dialog")
             asyncio.ensure_future(self._watch_dialog_response(dlg, group))
 
         elif tag == "set_health":
