@@ -71,7 +71,6 @@ class SampShellApp(App):
     CSS = """
     Screen {
         layout: vertical;
-        height: 30;
         background: transparent;
         scrollbar-size: 0 0;
     }
@@ -83,7 +82,8 @@ class SampShellApp(App):
     }
     #input-sep, #input-sep-bottom {
         height: 1;
-        color: ansi_bright_black;
+        color: ansi_white;
+        text-style: dim;
         margin: 0;
         padding: 0;
     }
@@ -94,7 +94,11 @@ class SampShellApp(App):
         width: 2;
         height: 1;
         padding: 0;
+        color: ansi_white;
     }
+    #input-prefix.mode-chat { color: ansi_green; }
+    #input-prefix.mode-command { color: ansi_magenta; }
+    #input-prefix.mode-sampcmd { color: ansi_cyan; }
     #input-bar ChatInput {
         width: 1fr;
     }
@@ -330,6 +334,7 @@ class SampShellApp(App):
             if self._is_junk_dialog(dlg):
                 return
             self._dialog_history.append(dlg)
+            self._event_log._capture_scroll_intent()
             group = await self._event_log.get_or_create_dialog_group()
             await group.add_dialog(dlg)
             self._event_log.call_after_refresh(self._event_log._auto_scroll)
@@ -354,12 +359,16 @@ class SampShellApp(App):
 
     @on(ChatInput.ModeChanged)
     def _on_mode_changed(self, event: ChatInput.ModeChanged) -> None:
+        self._input_prefix.remove_class("mode-chat", "mode-command", "mode-sampcmd")
         if event.mode == "command":
             self._input_prefix.update(":")
+            self._input_prefix.add_class("mode-command")
         elif event.mode == "sampcmd":
             self._input_prefix.update("/")
+            self._input_prefix.add_class("mode-sampcmd")
         else:
             self._input_prefix.update(">")
+            self._input_prefix.add_class("mode-chat")
 
     @on(ChatInput.Submitted)
     async def _on_chat_submitted(self, event: ChatInput.Submitted) -> None:

@@ -112,11 +112,15 @@ class StatusBar(Static):
 
     def render(self) -> str:
         x, y, z = self.pos
-        status = "CONNECTED" if self.connected else "DISCONNECTED"
+        if self.connected:
+            status = "[ansi_green]CONNECTED[/]"
+        else:
+            status = "[ansi_red]DISCONNECTED[/]"
+        
         return (
-            f"[{status}]  HP: {self.hp:.0f}  ARM: {self.armour:.0f}"
-            f"  POS: {x:.1f},{y:.1f},{z:.1f}"
-            f"  Players: {self.players}"
+            f" {status}  |  "
+            f"POS: {x:.1f}, {y:.1f}, {z:.1f}  |  "
+            f"Players: {self.players}"
         )
 
 
@@ -238,7 +242,7 @@ class DialogWidget(Vertical):
         background: ansi_bright_black 30%;
     }
     DialogWidget DataTable:focus > .datatable--cursor {
-        background: ansi_yellow;
+        background: ansi_yellow 20%;
         color: ansi_black;
         text-style: bold;
     }
@@ -281,12 +285,12 @@ class DialogWidget(Vertical):
     }
     DialogWidget ListItem:focus {
         background: ansi_yellow 20%;
-        color: ansi_yellow;
+        color: ansi_black;
         text-style: bold;
     }
     DialogWidget ListItem.--highlight {
         background: ansi_yellow 20%;
-        color: ansi_yellow;
+        color: ansi_black;
         text-style: bold;
     }
     DialogWidget .dialog-buttons {
@@ -344,12 +348,7 @@ class DialogWidget(Vertical):
             self._input_widget = Input()
             yield self._input_widget
 
-        elif isinstance(dlg, ListDialog):
-            lv = ListView()
-            self._list_widget = lv
-            yield lv
-
-        elif isinstance(dlg, (TablistDialog, TablistHeadersDialog)):
+        elif isinstance(dlg, (ListDialog, TablistDialog, TablistHeadersDialog)):
             if isinstance(dlg, TablistHeadersDialog):
                 yield Static("", classes="datatable-header")
             dt = DataTable(cursor_type="row", show_header=False)
@@ -371,15 +370,13 @@ class DialogWidget(Vertical):
         if title:
             self.border_title = title
 
-        if isinstance(self._list_widget, ListView):
-            if isinstance(dlg, ListDialog):
-                for row in dlg.rows:
-                    await self._list_widget.append(
-                        ListItem(Label(_to_markup(row.text)))
-                    )
-        elif isinstance(self._list_widget, DataTable):
+        if isinstance(self._list_widget, DataTable):
             dt = self._list_widget
-            if isinstance(dlg, TablistDialog):
+            if isinstance(dlg, ListDialog):
+                dt.add_column("", key="col0")
+                for row in dlg.rows:
+                    dt.add_row(_to_markup(row.text))
+            elif isinstance(dlg, TablistDialog):
                 if dlg.rows:
                     for i in range(len(dlg.rows[0].columns)):
                         dt.add_column("", key=f"col{i}")
@@ -418,12 +415,6 @@ class DialogWidget(Vertical):
             dlg.submit(text)
             self._mark_responded(return_focus=True)
 
-    @on(ListView.Selected)
-    async def _on_list_selected(self, event: ListView.Selected) -> None:
-        event.stop()
-        if self._btn1 and not self._dialog.is_responded:
-            await self._on_button_pressed(Button.Pressed(self._btn1))
-
     @on(DataTable.RowSelected)
     async def _on_table_selected(self, event: DataTable.RowSelected) -> None:
         event.stop()
@@ -443,10 +434,7 @@ class DialogWidget(Vertical):
                 dlg.submit(text)
             elif isinstance(dlg, (ListDialog, TablistDialog, TablistHeadersDialog)):
                 selected_idx = 0
-                if isinstance(self._list_widget, ListView):
-                    idx = self._list_widget.index
-                    selected_idx = idx if idx is not None else 0
-                elif isinstance(self._list_widget, DataTable):
+                if isinstance(self._list_widget, DataTable):
                     crow = self._list_widget.cursor_row
                     selected_idx = crow if crow is not None else 0
                 dlg.rows[selected_idx].select()
@@ -462,6 +450,8 @@ class DialogWidget(Vertical):
             self._input_widget.focus()
         elif self._list_widget is not None:
             self._list_widget.focus()
+        elif self._btn1 is not None:
+            self._btn1.focus()
 
     def _mark_responded(self, *, return_focus: bool = False) -> None:
         self.add_class("responded")
@@ -642,29 +632,54 @@ class EventLog(ScrollableContainer):
         super().__init__()
         self._line_count = 0
         self._active_group: DialogGroupWidget | None = None
+        self._want_scroll = False
+
+    def _capture_scroll_intent(self) -> None:
+        """Call BEFORE mounting new content.
+
+        Records whether the user is at the bottom right now, so that
+        _auto_scroll() can scroll after the layout has been updated —
+        without comparing the old scroll_y against the new (larger) max_scroll_y.
+        """
+        at_bottom = self.max_scroll_y == 0 or self.scroll_y >= self.max_scroll_y - 2
+        if at_bottom:
+            self._want_scroll = True
 
     async def append_line(self, text: str, *, style: str = "") -> None:
         """Append a plain text log entry.
 
-        If there is an active unresponded dialog group it is kept pinned at
-        the bottom by inserting the new line *before* it.  Once the dialog is
-        responded the pin is released and lines append normally.
+        If there are any unresponded dialog groups, keep them pinned at the bottom
+        by inserting the new line before the first such group found.
         """
+        self._capture_scroll_intent()
         line = LogLine(text, style=style)
-        group = self._active_group
-        # Pin before the group until it is sealed (cascade window has closed).
-        if group is not None and not group.is_sealed:
-            await self.mount(line, before=group)
+
+        # Find the first unresponded group to pin before
+        first_unresponded = None
+        for child in self.children:
+            if isinstance(child, DialogGroupWidget) and not child.is_responded:
+                first_unresponded = child
+                break
+
+        if first_unresponded is not None:
+            await self.mount(line, before=first_unresponded)
         else:
             await self.mount(line)
+
         self._line_count += 1
         self._prune()
         self.call_after_refresh(self._auto_scroll)
 
     async def get_or_create_dialog_group(self) -> DialogGroupWidget:
         """Return the active unsealed group, or create a new one."""
-        if self._active_group is not None and not self._active_group.is_sealed:
+        # Reuse group only if it is not sealed AND not yet responded to.
+        if (
+            self._active_group is not None
+            and not self._active_group.is_sealed
+            and not self._active_group.is_responded
+        ):
             return self._active_group
+        self._capture_scroll_intent()
         group = DialogGroupWidget()
         await self.mount(group)
         self._active_group = group
@@ -681,7 +696,10 @@ class EventLog(ScrollableContainer):
             self._line_count -= 1
 
     def _auto_scroll(self) -> None:
-        self.scroll_end(animate=False)
+        """Scroll to bottom if _capture_scroll_intent() decided we should."""
+        if self._want_scroll:
+            self._want_scroll = False
+            self.scroll_end(animate=False)
 
 
 # ── TextdrawPanel ─────────────────────────────────────────────────────────────
