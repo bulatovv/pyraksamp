@@ -20,13 +20,12 @@ from pyraksamp.events import (
     PlayerJoin,
     PlayerQuit,
     ServerMessage,
-    SetPosition,
 )
 from pyraksamp.shell._commands import CommandRegistry
+from pyraksamp.shell._completion import CommandHistory, CompletionItem, CompletionMenu
 from pyraksamp.shell._widgets import (
     ChatInput,
     EventLog,
-    StatusBar,
     TextdrawPanel,
     _strip_colors,
 )
@@ -118,25 +117,24 @@ class SampShellApp(App):
         # Bot state mirror
         self._players: dict[int, str] = {}
         self._connected_at: float = 0.0
-        self._health: float = 100.0
-        self._armour: float = 0.0
-        self._pos: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self._dialog_history: list[AnyDialog] = []
+
+        self._samp_history = CommandHistory()
 
     def compose(self) -> ComposeResult:
         self._event_log = EventLog()
         self._chat_input = ChatInput()
-        self._status_bar = StatusBar()
+        self._completion_menu = CompletionMenu()
         self._input_prefix = Static(">", id="input-prefix")
         self._input_hint = Label("", id="input-hint")
         yield self._event_log
         yield self._input_hint
+        yield self._completion_menu
         yield Rule(id="input-sep")
         with Horizontal(id="input-bar"):
             yield self._input_prefix
             yield self._chat_input
         yield Rule(id="input-sep-bottom")
-        yield self._status_bar
 
     async def on_mount(self) -> None:
         # Subscribe BEFORE starting (or attaching to) the bot so no events are missed.
@@ -148,17 +146,15 @@ class SampShellApp(App):
         self._chat_input.focus()
 
         if not self._bot._started:
-            # Start bot from within the TUI; subscription is already live.
+            self.set_hint("Connecting...", dim_yellow=True)
             asyncio.create_task(self._do_connect())
         elif self._bot.is_connected:
-            self._status_bar.connected = True
             await self._event_log.append_line(
                 "Attached to already-connected bot (events before this point not shown).",
                 style="dim",
             )
 
     async def _do_connect(self) -> None:
-        await self._event_log.append_line("Connecting...", style="dim")
         try:
             await self._bot.start()
         except Exception as exc:
@@ -183,9 +179,11 @@ class SampShellApp(App):
 
     # ── Public helpers for commands ────────────────────────────────────────────
 
-    def set_hint(self, text: str, *, dim: bool = False) -> None:
+    def set_hint(self, text: str, *, dim: bool = False, dim_yellow: bool = False) -> None:
         """Update the input hint label."""
-        if text and dim:
+        if text and dim_yellow:
+            self._input_hint.update(f"[ansi_yellow]{text}[/]")
+        elif text and dim:
             self._input_hint.update(f"[dim]{text}[/dim]")
         else:
             self._input_hint.update(text)
@@ -239,6 +237,18 @@ class SampShellApp(App):
             # Unbind ctrl+q
             event.prevent_default()
 
+    def on_mouse_move(self, event) -> None:
+        event.prevent_default()
+        event.stop()
+
+    def on_mouse_down(self, event) -> None:
+        event.prevent_default()
+        event.stop()
+
+    def on_mouse_up(self, event) -> None:
+        event.prevent_default()
+        event.stop()
+
     def _clear_exit_hint(self) -> None:
         self._exit_timer = None
         # Only clear if we are not currently showing a dialog nav hint
@@ -257,7 +267,7 @@ class SampShellApp(App):
                     await self._event_log.append_line(
                         "Disconnected from server.", style="error"
                     )
-                    self._status_bar.connected = False
+                    pass
                     break
                 try:
                     await self._route(tag, event)
@@ -290,8 +300,7 @@ class SampShellApp(App):
             import time
 
             self._connected_at = time.monotonic()
-            await self._event_log.append_line("Connected to server.", style="join")
-            self._status_bar.connected = True
+            self.set_hint("")
 
         elif tag == "chat":
             msg: ChatMessage = event[1]
@@ -309,7 +318,6 @@ class SampShellApp(App):
 
             evt: PlayerJoin = event[1]
             self._players[evt.player_id] = evt.name
-            self._status_bar.players = len(self._players)
             if time.monotonic() - self._connected_at > 10.0:
                 await self._event_log.append_line(
                     f"→ {evt.name} ({evt.player_id})", style="join"
@@ -320,7 +328,6 @@ class SampShellApp(App):
 
             evt: PlayerQuit = event[1]
             name = self._players.pop(evt.player_id, f"[{evt.player_id}]")
-            self._status_bar.players = len(self._players)
             if time.monotonic() - self._connected_at > 10.0:
                 await self._event_log.append_line(
                     f"← {name} ({evt.player_id})", style="quit"
@@ -328,9 +335,6 @@ class SampShellApp(App):
 
         elif tag == "dialog":
             dlg: AnyDialog = event[1]
-            logging.warning(
-                f"DIALOG: id={dlg.dialog_id} style={dlg.style} title={dlg.title!r}"
-            )
             if self._is_junk_dialog(dlg):
                 return
             self._dialog_history.append(dlg)
@@ -342,18 +346,6 @@ class SampShellApp(App):
                 self.set_hint("Press Tab to navigate to dialog")
             asyncio.ensure_future(self._watch_dialog_response(dlg, group))
 
-        elif tag == "set_health":
-            self._health = event[1].health
-            self._status_bar.hp = event[1].health
-
-        elif tag == "set_armour":
-            self._armour = event[1].armour
-            self._status_bar.armour = event[1].armour
-
-        elif tag == "set_position":
-            evt: SetPosition = event[1]
-            self._pos = (evt.x, evt.y, evt.z)
-            self._status_bar.pos = self._pos
 
     # ── Chat input handler ─────────────────────────────────────────────────────
 
@@ -370,8 +362,73 @@ class SampShellApp(App):
             self._input_prefix.update(">")
             self._input_prefix.add_class("mode-chat")
 
+    # ── Completion ─────────────────────────────────────────────────────────────
+
+    def _close_completion(self) -> None:
+        self._completion_menu.close()
+        self._chat_input.completion_active = False
+
+    def _apply_completion(self, text: str) -> None:
+        self._close_completion()
+        self._chat_input.value = text
+        self._chat_input.cursor_position = len(text)
+
+    @on(ChatInput.TabPressed)
+    def _on_tab_pressed(self, event: ChatInput.TabPressed) -> None:
+        if self._completion_menu.is_open and not event.shift:
+            selected = self._completion_menu.move(1)
+            if selected is not None:
+                self._chat_input.value = selected
+                self._chat_input.cursor_position = len(selected)
+            return
+
+        # Shift+Tab — open (or reopen) menu with fresh completions
+        prefix = self._chat_input.value.strip()
+        if self._chat_input.command_mode:
+            items = []
+            for name in self._commands.names():
+                if not name.startswith(prefix):
+                    continue
+                cmd = self._commands.get(name)
+                label = f"{name} {cmd.metavar}".rstrip() if cmd.metavar else name
+                items.append(CompletionItem(insert=name, label=label, description=cmd.help))
+        else:  # samp_mode
+            full_prefix = f"/{prefix}" if not prefix.startswith("/") else prefix
+            items = [
+                CompletionItem(insert=c[1:] if c.startswith("/") else c, label=c)
+                for c in self._samp_history.completions(full_prefix)
+            ]
+
+        if not items:
+            return
+
+        self._completion_menu.open(items)
+        self._chat_input.completion_active = True
+        # Preview first item
+        self._chat_input.value = items[0].insert
+        self._chat_input.cursor_position = len(items[0].insert)
+
+    @on(ChatInput.CompletionConfirmed)
+    def _on_completion_confirmed(self, _event: ChatInput.CompletionConfirmed) -> None:
+        selected = self._completion_menu.selected
+        if selected:
+            self._apply_completion(selected)
+
+    @on(ChatInput.CompletionDismissed)
+    def _on_completion_dismissed(self, _event: ChatInput.CompletionDismissed) -> None:
+        self._close_completion()
+
+    @on(ChatInput.ModeChanged)
+    def _on_mode_changed_completion(self, _event: ChatInput.ModeChanged) -> None:
+        # Close completion if user exits command/samp mode
+        if self._completion_menu.is_open:
+            self._close_completion()
+
+    # ── Chat input handler ─────────────────────────────────────────────────────
+
     @on(ChatInput.Submitted)
     async def _on_chat_submitted(self, event: ChatInput.Submitted) -> None:
+        self._close_completion()
         text = event.value.strip()
         is_samp_command = self._chat_input.samp_mode or text.startswith("/")
         is_tui_command = self._chat_input.command_mode or text.startswith(":")
@@ -402,6 +459,7 @@ class SampShellApp(App):
         elif is_samp_command:
             try:
                 cmd_text = text if text.startswith("/") else f"/{text}"
+                self._samp_history.add(cmd_text)
                 self._bot.send_command(cmd_text)
             except Exception as exc:
                 await self._event_log.append_line(f"Send error: {exc}", style="error")

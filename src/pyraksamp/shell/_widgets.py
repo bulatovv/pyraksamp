@@ -11,7 +11,6 @@ from textual.binding import Binding
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import (
-    Button,
     DataTable,
     Input,
     Label,
@@ -61,6 +60,70 @@ def _strip_colors(text: str) -> str:
 if TYPE_CHECKING:
     pass
 
+
+# ── _DialogButton ──────────────────────────────────────────────────────────────
+
+
+class _DialogButton(Static):
+    """Minimal focusable button for dialogs with full CSS control."""
+
+    class Pressed(Message):
+        def __init__(self, button: "_DialogButton") -> None:
+            super().__init__()
+            self.button = button
+
+    DEFAULT_CSS = """
+    _DialogButton {
+        height: auto;
+        width: auto;
+        padding: 0 1;
+        border: none;
+        color: ansi_white;
+        text-style: dim;
+    }
+    _DialogButton.active-dialog {
+        color: ansi_blue;
+        text-style: none;
+    }
+    _DialogButton.active-dialog:focus {
+        background: ansi_blue;
+        color: ansi_black;
+        text-style: none;
+    }
+    _DialogButton.disabled {
+        color: ansi_bright_black;
+        text-style: none;
+    }
+    """
+
+    def __init__(self, label: str) -> None:
+        super().__init__(label)
+        self.can_focus = True
+        self._disabled = False
+
+    @property
+    def disabled(self) -> bool:
+        return self._disabled
+
+    @disabled.setter
+    def disabled(self, value: bool) -> None:
+        self._disabled = value
+        self.can_focus = not value
+        if value:
+            self.add_class("disabled")
+        else:
+            self.remove_class("disabled")
+
+    def on_click(self) -> None:
+        if not self._disabled:
+            self.post_message(self.Pressed(self))
+
+    def on_key(self, event) -> None:
+        if event.key in ("enter", "space") and not self._disabled:
+            self.post_message(self.Pressed(self))
+            event.prevent_default()
+
+
 # ── LogLine ────────────────────────────────────────────────────────────────────
 
 
@@ -76,7 +139,7 @@ class LogLine(Static):
     LogLine.chat { color: ansi_white; }
     LogLine.server { color: ansi_bright_black; }
     LogLine.join { color: ansi_green; }
-    LogLine.quit { color: ansi_bright_black; }
+    LogLine.quit { color: ansi_bright_black; text-style: italic; }
     LogLine.dim { color: ansi_bright_black; }
     LogLine.bold { color: ansi_white; text-style: bold; }
     LogLine.error { color: ansi_red; text-style: bold; }
@@ -108,20 +171,16 @@ class StatusBar(Static):
     armour: reactive[float] = reactive(0.0)
     pos: reactive[tuple] = reactive((0.0, 0.0, 0.0))
     players: reactive[int] = reactive(0)
-    connected: reactive[bool] = reactive(False)
+    connection_state: reactive[str] = reactive("connecting")  # connecting | connected
 
     def render(self) -> str:
         x, y, z = self.pos
-        if self.connected:
-            status = "[ansi_green]CONNECTED[/]"
-        else:
-            status = "[ansi_red]DISCONNECTED[/]"
-        
-        return (
-            f" {status}  |  "
-            f"POS: {x:.1f}, {y:.1f}, {z:.1f}  |  "
-            f"Players: {self.players}"
-        )
+        parts = []
+        if self.connection_state == "connecting":
+            parts.append("[ansi_yellow]CONNECTING...[/]")
+        parts.append(f"POS: {x:.1f}, {y:.1f}, {z:.1f}")
+        parts.append(f"Players: {self.players}")
+        return "  |  ".join(f" {p}" if i == 0 else p for i, p in enumerate(parts))
 
 
 # ── ChatInput ─────────────────────────────────────────────────────────────────
@@ -145,14 +204,50 @@ class ChatInput(Input):
             super().__init__()
             self.mode = mode  # "chat", "command", or "sampcmd"
 
+    class TabPressed(Message):
+        def __init__(self, shift: bool = False) -> None:
+            super().__init__()
+            self.shift = shift
+
+    class CompletionConfirmed(Message):
+        pass
+
+    class CompletionDismissed(Message):
+        pass
+
     def __init__(self) -> None:
         super().__init__(
             placeholder="type a message or :command or /samp_command", compact=True
         )
         self.command_mode = False
         self.samp_mode = False
+        self.completion_active = False
 
     def on_key(self, event) -> None:
+        # Completion intercepts (highest priority)
+        if self.completion_active:
+            if event.key == "enter":
+                event.prevent_default()
+                event.stop()
+                self.post_message(self.CompletionConfirmed())
+                return
+            if event.key == "escape":
+                event.prevent_default()
+                event.stop()
+                self.post_message(self.CompletionDismissed())
+                return
+
+        if (self.command_mode or self.samp_mode) and event.key == "shift+tab":
+            event.prevent_default()
+            event.stop()
+            self.post_message(self.TabPressed(shift=True))
+            return
+        if (self.command_mode or self.samp_mode) and self.completion_active and event.key == "tab":
+            event.prevent_default()
+            event.stop()
+            self.post_message(self.TabPressed(shift=False))
+            return
+
         if not self.value and not (self.command_mode or self.samp_mode):
             if event.character == ":":
                 event.prevent_default()
@@ -187,16 +282,18 @@ class DialogWidget(Vertical):
     DEFAULT_CSS = """
     DialogWidget {
         height: auto;
-        border: round ansi_white;
+        border: round ansi_bright_black;
         padding: 0 1;
         margin: 0;
         background: transparent;
+        text-style: dim;
+    }
+    DialogWidget.active {
+        border: round ansi_white;
+        text-style: none;
     }
     DialogWidget.responded {
         border: round ansi_bright_black;
-    }
-    DialogWidget.responded Label {
-        color: ansi_white;
         text-style: dim;
     }
     DialogWidget Label.dialog-body {
@@ -207,9 +304,12 @@ class DialogWidget(Vertical):
         width: 1fr;
         height: 3;
         margin-top: 1;
-        border: round ansi_white;
+        border: round ansi_bright_black;
         padding: 0 1;
         color: ansi_white;
+    }
+    DialogWidget.active Input {
+        border: round ansi_white;
     }
     DialogWidget Input:focus {
         border: round ansi_yellow;
@@ -218,12 +318,7 @@ class DialogWidget(Vertical):
     DialogWidget.responded Input {
         background: transparent;
         color: ansi_white;
-        text-style: dim;
         border: round ansi_bright_black;
-    }
-    DialogWidget.responded ListItem {
-        color: ansi_white;
-        text-style: dim;
     }
     DialogWidget DataTable {
         height: auto;
@@ -234,17 +329,19 @@ class DialogWidget(Vertical):
     DialogWidget .datatable-header {
         height: 1;
         color: ansi_white;
-        text-style: bold;
         padding: 0 0;
         background: transparent;
     }
+    DialogWidget.active .datatable-header {
+        text-style: bold;
+    }
     DialogWidget DataTable > .datatable--cursor {
         background: ansi_bright_black 30%;
+        color: ansi_white;
     }
     DialogWidget DataTable:focus > .datatable--cursor {
-        background: ansi_yellow 20%;
-        color: ansi_black;
-        text-style: bold;
+        background: ansi_bright_black 70%;
+        color: ansi_white;
     }
     DialogWidget DataTable > .datatable--hover {
         background: ansi_white 10%;
@@ -255,18 +352,7 @@ class DialogWidget(Vertical):
     DialogWidget DataTable > .datatable--even-row {
         background: transparent;
     }
-    DialogWidget.responded DataTable {
-        background: transparent;
-        color: ansi_white;
-        text-style: dim;
-    }
     DialogWidget.responded DataTable > .datatable--cursor {
-        background: transparent;
-    }
-    DialogWidget.responded DataTable > .datatable--odd-row {
-        background: transparent;
-    }
-    DialogWidget.responded DataTable > .datatable--even-row {
         background: transparent;
     }
     DialogWidget ListView {
@@ -280,41 +366,19 @@ class DialogWidget(Vertical):
         background: transparent;
         padding: 0 1;
     }
-    DialogWidget ListItem:hover {
-        background: ansi_white 10%;
-    }
+
     DialogWidget ListItem:focus {
-        background: ansi_yellow 20%;
-        color: ansi_black;
-        text-style: bold;
+        background: ansi_bright_black 70%;
+        color: ansi_white;
     }
     DialogWidget ListItem.--highlight {
-        background: ansi_yellow 20%;
-        color: ansi_black;
-        text-style: bold;
+        background: ansi_bright_black 30%;
+        color: ansi_white;
     }
     DialogWidget .dialog-buttons {
         height: auto;
         align: right middle;
         margin-top: 1;
-    }
-    DialogWidget Button {
-        min-width: 4;
-        background: transparent;
-        color: ansi_cyan;
-        border: round ansi_cyan;
-    }
-    DialogWidget Button:hover {
-        border: round ansi_bright_cyan;
-        color: ansi_bright_cyan;
-    }
-    DialogWidget Button:disabled {
-        color: ansi_white;
-        text-style: dim;
-        border: round ansi_bright_black;
-    }
-    DialogWidget.responded Button {
-        border: round ansi_bright_black;
     }
     """
 
@@ -323,8 +387,8 @@ class DialogWidget(Vertical):
         self._dialog = dialog
         self._input_widget: Input | None = None
         self._list_widget: ListView | DataTable | None = None
-        self._btn1: Button | None = None
-        self._btn2: Button | None = None
+        self._btn1: _DialogButton | None = None
+        self._btn2: _DialogButton | None = None
 
     def compose(self) -> ComposeResult:
         dlg = self._dialog
@@ -357,18 +421,18 @@ class DialogWidget(Vertical):
 
         with Horizontal(classes="dialog-buttons"):
             if btn1_label:
-                self._btn1 = Button(btn1_label, variant="primary", compact=True)
+                self._btn1 = _DialogButton(btn1_label)
                 yield self._btn1
             if btn2_label:
-                self._btn2 = Button(btn2_label, variant="default", compact=True)
+                self._btn2 = _DialogButton(btn2_label)
                 yield self._btn2
 
     async def on_mount(self) -> None:
         dlg = self._dialog
 
         title = _strip_colors(getattr(dlg, "title", "") or "").strip()
-        if title:
-            self.border_title = title
+        self._base_title = title
+        self.border_title = f"📌 {title}" if title else "📌"
 
         if isinstance(self._list_widget, DataTable):
             dt = self._list_widget
@@ -397,6 +461,27 @@ class DialogWidget(Vertical):
                 for row in dlg.rows:
                     dt.add_row(*(_to_markup(c) for c in row.columns))
 
+    def _set_buttons_active(self, active: bool) -> None:
+        for btn in (self._btn1, self._btn2):
+            if btn is not None:
+                if active:
+                    btn.add_class("active-dialog")
+                else:
+                    btn.remove_class("active-dialog")
+
+    def on_descendant_focus(self) -> None:
+        if not self._dialog.is_responded:
+            self.add_class("active")
+            self._set_buttons_active(True)
+
+    def on_descendant_blur(self) -> None:
+        self.set_timer(0.05, self._check_active)
+
+    def _check_active(self) -> None:
+        if not self.has_pseudo_class("focus-within"):
+            self.remove_class("active")
+            self._set_buttons_active(False)
+
     def on_key(self, event) -> None:
         if event.key == "escape" and not self._dialog.is_responded:
             event.prevent_default()
@@ -419,10 +504,10 @@ class DialogWidget(Vertical):
     async def _on_table_selected(self, event: DataTable.RowSelected) -> None:
         event.stop()
         if self._btn1 and not self._dialog.is_responded:
-            await self._on_button_pressed(Button.Pressed(self._btn1))
+            await self._on_button_pressed(_DialogButton.Pressed(self._btn1))
 
-    @on(Button.Pressed)
-    async def _on_button_pressed(self, event: Button.Pressed) -> None:
+    @on(_DialogButton.Pressed)
+    async def _on_button_pressed(self, event: _DialogButton.Pressed) -> None:
         event.stop()
         if self._dialog.is_responded:
             return
@@ -454,7 +539,10 @@ class DialogWidget(Vertical):
             self._btn1.focus()
 
     def _mark_responded(self, *, return_focus: bool = False) -> None:
+        self.remove_class("active")
         self.add_class("responded")
+        self._set_buttons_active(False)
+        self.border_title = self._base_title
         if self._btn1:
             self._btn1.disabled = True
         if self._btn2:
@@ -496,7 +584,8 @@ class DialogGroupWidget(Vertical):
     DEFAULT_CSS = """
     DialogGroupWidget {
         height: auto;
-        margin: 0;
+        margin-top: 1;
+        margin-bottom: 0;
         padding: 0;
         background: transparent;
     }
@@ -630,6 +719,7 @@ class EventLog(ScrollableContainer):
 
     def __init__(self) -> None:
         super().__init__()
+        self.can_focus = False
         self._line_count = 0
         self._active_group: DialogGroupWidget | None = None
         self._want_scroll = False

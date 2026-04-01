@@ -39,11 +39,11 @@ class Shell:
         self._delay = post_middleware_delay
         _register_builtins(self._commands)
 
-    def register_command(self, name: str, fn: Callable, help: str = "") -> None:
+    def register_command(self, name: str, fn: Callable, help: str = "", metavar: str = "") -> None:
         """Register a custom command (e.g. ``:greet``)."""
-        self._commands.register(name, fn, help)
+        self._commands.register(name, fn, help, metavar)
 
-    def command(self, name: str, help: str = ""):
+    def command(self, name: str, help: str = "", metavar: str = ""):
         """Decorator: register a custom shell command.
 
         ::
@@ -54,7 +54,7 @@ class Shell:
         """
 
         def decorator(fn: Callable) -> Callable:
-            self._commands.register(name, fn, help)
+            self._commands.register(name, fn, help, metavar)
             return fn
 
         return decorator

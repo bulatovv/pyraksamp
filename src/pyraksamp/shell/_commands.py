@@ -16,14 +16,15 @@ class Command:
     name: str
     fn: Callable
     help: str = ""
+    metavar: str = ""
 
 
 class CommandRegistry:
     def __init__(self) -> None:
         self._commands: dict[str, Command] = {}
 
-    def register(self, name: str, fn: Callable, help: str = "") -> None:
-        self._commands[name] = Command(name=name, fn=fn, help=help)
+    def register(self, name: str, fn: Callable, help: str = "", metavar: str = "") -> None:
+        self._commands[name] = Command(name=name, fn=fn, help=help, metavar=metavar)
 
     def get(self, name: str) -> Command | None:
         return self._commands.get(name)
@@ -94,25 +95,14 @@ async def _cmd_tablist(args: list[str], app: SampShellApp) -> None:
         app.log_line(f"{pid:<{col_id}}  {name:<{col_name}}", style="dim")
 
 
-async def _cmd_pos(args: list[str], app: SampShellApp) -> None:
-    x, y, z = app._pos
-    app.log_line(f"Position: x={x:.2f} y={y:.2f} z={z:.2f}", style="dim")
-
-
-async def _cmd_health(args: list[str], app: SampShellApp) -> None:
-    app.log_line(f"Health: {app._health:.1f}  Armour: {app._armour:.1f}", style="dim")
-
-
 async def _cmd_quit(args: list[str], app: SampShellApp) -> None:
     app.exit()
 
 
 def _register_builtins(registry: CommandRegistry) -> None:
-    registry.register("help", _cmd_help, "List all commands")
-    registry.register("loglevel", _cmd_loglevel, "[logger] LEVEL — set log level")
+    registry.register("help",      _cmd_help,      "List all commands")
+    registry.register("loglevel",  _cmd_loglevel,  "Set log level",          metavar="[logger] <level>")
     registry.register("textdraws", _cmd_textdraws, "Toggle textdraw panel")
-    registry.register("dialogs", _cmd_dialogs, "Print dialog history")
-    registry.register("tablist", _cmd_tablist, "Show player table (id, name)")
-    registry.register("pos", _cmd_pos, "Print current position")
-    registry.register("health", _cmd_health, "Print health and armour")
-    registry.register("quit", _cmd_quit, "Exit the shell")
+    registry.register("dialogs",   _cmd_dialogs,   "Print dialog history")
+    registry.register("tablist",   _cmd_tablist,   "Show player table")
+    registry.register("quit",      _cmd_quit,      "Exit the shell")
