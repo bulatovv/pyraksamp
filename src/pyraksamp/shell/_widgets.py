@@ -137,7 +137,7 @@ class LogLine(Static):
         background: transparent;
     }
     LogLine.chat { color: ansi_white; }
-    LogLine.server { color: ansi_bright_black; }
+    LogLine.server { color: ansi_white; }
     LogLine.join { color: ansi_green; }
     LogLine.quit { color: ansi_bright_black; text-style: italic; }
     LogLine.dim { color: ansi_bright_black; }
@@ -197,6 +197,10 @@ class ChatInput(Input):
 
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("enter", "submit", "Send", show=False),
+        Binding("shift+tab", "open_completion", "Complete", show=False),
+        Binding("tab", "cycle_completion", "Cycle", show=False),
+        Binding("up", "history_up", "History up", show=False),
+        Binding("down", "history_down", "History down", show=False),
     ]
 
     class ModeChanged(Message):
@@ -215,6 +219,12 @@ class ChatInput(Input):
     class CompletionDismissed(Message):
         pass
 
+    class HistoryUp(Message):
+        pass
+
+    class HistoryDown(Message):
+        pass
+
     def __init__(self) -> None:
         super().__init__(
             placeholder="type a message or :command or /samp_command", compact=True
@@ -222,6 +232,28 @@ class ChatInput(Input):
         self.command_mode = False
         self.samp_mode = False
         self.completion_active = False
+
+    def action_history_up(self) -> None:
+        self.post_message(self.HistoryUp())
+
+    def action_history_down(self) -> None:
+        self.post_message(self.HistoryDown())
+
+    def action_open_completion(self) -> None:
+        if self.command_mode or self.samp_mode:
+            self.post_message(self.TabPressed(shift=True))
+        else:
+            self.screen.focus_previous()
+
+    def action_cycle_completion(self) -> None:
+        if self.command_mode or self.samp_mode:
+            # Open if not yet open, cycle if already open
+            if self.completion_active:
+                self.post_message(self.TabPressed(shift=False))
+            else:
+                self.post_message(self.TabPressed(shift=True))
+        else:
+            self.screen.focus_next()
 
     def on_key(self, event) -> None:
         # Completion intercepts (highest priority)
@@ -236,17 +268,6 @@ class ChatInput(Input):
                 event.stop()
                 self.post_message(self.CompletionDismissed())
                 return
-
-        if (self.command_mode or self.samp_mode) and event.key == "shift+tab":
-            event.prevent_default()
-            event.stop()
-            self.post_message(self.TabPressed(shift=True))
-            return
-        if (self.command_mode or self.samp_mode) and self.completion_active and event.key == "tab":
-            event.prevent_default()
-            event.stop()
-            self.post_message(self.TabPressed(shift=False))
-            return
 
         if not self.value and not (self.command_mode or self.samp_mode):
             if event.character == ":":
@@ -552,21 +573,35 @@ class DialogWidget(Vertical):
             self._input_widget.can_focus = False
         if self._list_widget is not None:
             self._list_widget.can_focus = False
+        self._on_responded()
         if return_focus:
-            self.set_timer(0.3, self._maybe_return_focus)
+            self._return_focus_to_chat()
 
-    def _maybe_return_focus(self) -> None:
+    def _on_responded(self) -> None:
+        """Called by _mark_responded; resets the group's cascade timer."""
+        group = self.parent
+        if isinstance(group, DialogGroupWidget):
+            group._reset_cascade_timer()
+
+    def _return_focus_to_chat(self) -> None:
         from pyraksamp.shell._app import SampShellApp
+
+        if not isinstance(self.app, SampShellApp):
+            return
 
         group = self.parent
         if not isinstance(group, DialogGroupWidget):
             return
-        # If a cascade happened, a new pane is now last — don't steal focus
+
+        # A cascade pane arrived — leave focus on the new dialog
         if group._panes[-1] is not self:
             return
-        if isinstance(self.app, SampShellApp):
-            self.app.set_hint("")
-            self.app._chat_input.focus()
+
+        # Call focus() synchronously before Textual's own focus redistribution
+        # fires (triggered by can_focus=False on disabled elements).  Since
+        # chat_input remains focusable, Textual's redistribution is a no-op.
+        self.app.set_hint("")
+        self.app._chat_input.focus()
 
     def mark_responded_externally(self) -> None:
         """Called when dialog was responded outside the TUI (e.g. via bot.on_dialog)."""
@@ -762,12 +797,7 @@ class EventLog(ScrollableContainer):
 
     async def get_or_create_dialog_group(self) -> DialogGroupWidget:
         """Return the active unsealed group, or create a new one."""
-        # Reuse group only if it is not sealed AND not yet responded to.
-        if (
-            self._active_group is not None
-            and not self._active_group.is_sealed
-            and not self._active_group.is_responded
-        ):
+        if self._active_group is not None and not self._active_group.is_sealed:
             return self._active_group
         self._capture_scroll_intent()
         group = DialogGroupWidget()
@@ -792,43 +822,89 @@ class EventLog(ScrollableContainer):
             self.scroll_end(animate=False)
 
 
-# ── TextdrawPanel ─────────────────────────────────────────────────────────────
+# ── TextdrawMenu ──────────────────────────────────────────────────────────────
 
 
-class TextdrawPanel(ListView):
-    """Inline textdraw list, togglable via :textdraws command."""
+class TextdrawMenu(Static):
+    """Keyboard-navigable textdraw list rendered like CompletionMenu.
+
+    Selectable textdraws are listed first (sorted by id) and can be
+    navigated with Up/Down + confirmed with Enter.  Non-selectable textdraws
+    follow, rendered dim, and are skipped during navigation.
+    Press Escape to close.
+    """
+
+    class Dismissed(Message):
+        pass
+
+    can_focus = True
 
     DEFAULT_CSS = """
-    TextdrawPanel {
+    TextdrawMenu {
         height: auto;
-        max-height: 8;
-        border: round $accent;
-        margin: 0;
-        scrollbar-size: 0 0;
+        max-height: 12;
+        background: transparent;
+        color: ansi_white;
+        padding: 0 1;
     }
     """
 
     def __init__(self, bot) -> None:
-        super().__init__()
+        super().__init__("")
         self._bot = bot
+        self._items: list = []          # all TextDraw objects, selectable-first
+        self._sel_count: int = 0        # how many leading items are selectable
+        self._cursor: int = 0           # index among selectable items only
         self._watch_task: asyncio.Task | None = None
 
     async def on_mount(self) -> None:
-        self._refresh_list()
+        self._refresh_items()
         self._watch_task = asyncio.create_task(self._watch_changes())
 
     def on_unmount(self) -> None:
         if self._watch_task:
             self._watch_task.cancel()
 
-    def _refresh_list(self) -> None:
-        self.clear()
-        for td in self._bot.textdraws.all():
-            from pyraksamp.textdraws import SelectableTextDraw
+    def _refresh_items(self) -> None:
+        from pyraksamp.textdraws import SelectableTextDraw
 
-            sel_marker = "[SEL]" if isinstance(td, SelectableTextDraw) else "[ ]  "
-            text_preview = (td.text or "")[:40]
-            self.append(ListItem(Label(f"{sel_marker} {td.id}  {text_preview!r}")))
+        all_tds = self._bot.textdraws.all()
+        selectable = sorted(
+            [td for td in all_tds if isinstance(td, SelectableTextDraw)],
+            key=lambda t: t.id,
+        )
+        non_selectable = sorted(
+            [td for td in all_tds if not isinstance(td, SelectableTextDraw)],
+            key=lambda t: t.id,
+        )
+        self._items = selectable + non_selectable
+        self._sel_count = len(selectable)
+        if self._sel_count:
+            self._cursor = min(self._cursor, self._sel_count - 1)
+        else:
+            self._cursor = 0
+        self._render()
+
+    def _render(self) -> None:
+        from textual.markup import escape
+
+        if not self._items:
+            self.update("[dim](no textdraws)[/dim]")
+            return
+
+        lines = []
+        for i, td in enumerate(self._items):
+            is_sel = i < self._sel_count
+            text = escape((td.text or "")[:60])
+            label = f"{td.id:>4}  {text}"
+            if is_sel and i == self._cursor:
+                lines.append(f"[reverse] {label} [/reverse]")
+            elif is_sel:
+                lines.append(f" {label} ")
+            else:
+                lines.append(f"[dim] {label} [/dim]")
+
+        self.update("\n".join(lines))
 
     async def _watch_changes(self) -> None:
         cond = self._bot.textdraws._condition
@@ -836,21 +912,31 @@ class TextdrawPanel(ListView):
             try:
                 async with cond:
                     await cond.wait()
-                self.call_from_thread(self._refresh_list)
+                self._refresh_items()
             except asyncio.CancelledError:
                 break
             except Exception:
                 await asyncio.sleep(0.5)
 
-    @on(ListView.Selected)
-    async def _on_selected(self, event: ListView.Selected) -> None:
-        """Click the textdraw if it's selectable."""
-        tds = self._bot.textdraws.all()
-        idx = self.index
-        if idx is None or idx >= len(tds):
-            return
-        td = tds[idx]
+    def on_key(self, event) -> None:
         from pyraksamp.textdraws import SelectableTextDraw
 
-        if isinstance(td, SelectableTextDraw):
-            td.click()
+        if event.key == "up":
+            if self._sel_count:
+                self._cursor = (self._cursor - 1) % self._sel_count
+                self._render()
+            event.prevent_default()
+        elif event.key == "down":
+            if self._sel_count:
+                self._cursor = (self._cursor + 1) % self._sel_count
+                self._render()
+            event.prevent_default()
+        elif event.key == "enter":
+            if self._sel_count:
+                td = self._items[self._cursor]
+                if isinstance(td, SelectableTextDraw):
+                    td.click()
+            event.prevent_default()
+        elif event.key == "escape":
+            self.post_message(self.Dismissed())
+            event.prevent_default()

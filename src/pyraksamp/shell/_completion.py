@@ -18,13 +18,14 @@ class CompletionItem:
 
 
 class CommandHistory:
-    """Ordered unique command history. Most recently used entries come first
-    in completion results."""
+    """Ordered unique command history with Up/Down navigation support."""
 
     _MAX = 500
 
     def __init__(self) -> None:
         self._entries: list[str] = []
+        self._nav_pos: int | None = None   # None = at end (not navigating)
+        self._nav_saved: str = ""          # input captured when navigation started
 
     def add(self, command: str) -> None:
         command = command.strip()
@@ -37,6 +38,38 @@ class CommandHistory:
         self._entries.append(command)
         if len(self._entries) > self._MAX:
             self._entries.pop(0)
+        self._nav_pos = None
+        self._nav_saved = ""
+
+    def navigate_up(self, current: str) -> str | None:
+        """Go to older entry.  Saves *current* on first call.
+        Returns entry text, or None if already at oldest."""
+        if not self._entries:
+            return None
+        if self._nav_pos is None:
+            self._nav_saved = current
+            self._nav_pos = len(self._entries) - 1
+        elif self._nav_pos > 0:
+            self._nav_pos -= 1
+        else:
+            return None
+        return self._entries[self._nav_pos]
+
+    def navigate_down(self) -> str:
+        """Go to newer entry.  Returns saved input when stepping past the end."""
+        if self._nav_pos is None:
+            return ""
+        if self._nav_pos < len(self._entries) - 1:
+            self._nav_pos += 1
+            return self._entries[self._nav_pos]
+        saved = self._nav_saved
+        self._nav_pos = None
+        self._nav_saved = ""
+        return saved
+
+    def navigate_reset(self) -> None:
+        self._nav_pos = None
+        self._nav_saved = ""
 
     def completions(self, prefix: str) -> list[str]:
         """Return entries that start with *prefix*, most recent first."""

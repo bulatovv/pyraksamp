@@ -26,7 +26,7 @@ from pyraksamp.shell._completion import CommandHistory, CompletionItem, Completi
 from pyraksamp.shell._widgets import (
     ChatInput,
     EventLog,
-    TextdrawPanel,
+    TextdrawMenu,
     _strip_colors,
 )
 
@@ -95,7 +95,7 @@ class SampShellApp(App):
         padding: 0;
         color: ansi_white;
     }
-    #input-prefix.mode-chat { color: ansi_green; }
+    #input-prefix.mode-chat { color: ansi_white; }
     #input-prefix.mode-command { color: ansi_magenta; }
     #input-prefix.mode-sampcmd { color: ansi_cyan; }
     #input-bar ChatInput {
@@ -111,7 +111,7 @@ class SampShellApp(App):
         self._bus_q: asyncio.Queue = asyncio.Queue()
         self._event_task: asyncio.Task | None = None
         self._log_handler: _ShellLogHandler | None = None
-        self._textdraw_panel: TextdrawPanel | None = None
+        self._textdraw_panel: TextdrawMenu | None = None
         self._exit_timer: asyncio.TimerHandle | None = None
 
         # Bot state mirror
@@ -120,6 +120,8 @@ class SampShellApp(App):
         self._dialog_history: list[AnyDialog] = []
 
         self._samp_history = CommandHistory()
+        self._cmd_history = CommandHistory()
+        self._chat_history = CommandHistory()
 
     def compose(self) -> ComposeResult:
         self._event_log = EventLog()
@@ -193,16 +195,20 @@ class SampShellApp(App):
         asyncio.ensure_future(self._event_log.append_line(text, style=style))
 
     def toggle_textdraws(self) -> None:
-        """Mount or unmount the TextdrawPanel."""
+        """Mount or unmount the TextdrawMenu."""
         if self._textdraw_panel is not None:
             self._textdraw_panel.remove()
             self._textdraw_panel = None
             self._chat_input.focus()
         else:
-            panel = TextdrawPanel(self._bot)
+            panel = TextdrawMenu(self._bot)
             self._textdraw_panel = panel
-            self.mount(panel, before=self._chat_input)
+            self.mount(panel, before=self._input_hint)
             panel.focus()
+
+    @on(TextdrawMenu.Dismissed)
+    def _on_textdraw_dismissed(self, _event: TextdrawMenu.Dismissed) -> None:
+        self.toggle_textdraws()
 
     async def _watch_dialog_response(self, dlg, group) -> None:
         """Reset cascade timer when a dialog is auto-responded by the bot."""
@@ -340,9 +346,11 @@ class SampShellApp(App):
             self._dialog_history.append(dlg)
             self._event_log._capture_scroll_intent()
             group = await self._event_log.get_or_create_dialog_group()
-            await group.add_dialog(dlg)
+            pane = await group.add_dialog(dlg)
             self._event_log.call_after_refresh(self._event_log._auto_scroll)
-            if self.focused is self._chat_input:
+            if self.focused is self._chat_input and not self._chat_input.value:
+                pane._focus_interactive()
+            elif self.focused is self._chat_input:
                 self.set_hint("Press Tab to navigate to dialog")
             asyncio.ensure_future(self._watch_dialog_response(dlg, group))
 
@@ -420,15 +428,51 @@ class SampShellApp(App):
 
     @on(ChatInput.ModeChanged)
     def _on_mode_changed_completion(self, _event: ChatInput.ModeChanged) -> None:
-        # Close completion if user exits command/samp mode
         if self._completion_menu.is_open:
             self._close_completion()
+        for hist in (self._samp_history, self._cmd_history, self._chat_history):
+            hist.navigate_reset()
+
+    # ── History navigation ─────────────────────────────────────────────────────
+
+    def _current_history(self) -> "CommandHistory":
+        if self._chat_input.command_mode:
+            return self._cmd_history
+        if self._chat_input.samp_mode:
+            return self._samp_history
+        return self._chat_history
+
+    def _set_input(self, text: str) -> None:
+        self._chat_input.value = text
+        self._chat_input.cursor_position = len(text)
+
+    @on(ChatInput.HistoryUp)
+    def _on_history_up(self, _event: ChatInput.HistoryUp) -> None:
+        hist = self._current_history()
+        # In samp mode the input has no leading "/", but history stores "/cmd"
+        current = self._chat_input.value
+        stored_current = f"/{current}" if self._chat_input.samp_mode else current
+        result = hist.navigate_up(stored_current)
+        if result is not None:
+            if self._chat_input.samp_mode and result.startswith("/"):
+                result = result[1:]
+            self._set_input(result)
+
+    @on(ChatInput.HistoryDown)
+    def _on_history_down(self, _event: ChatInput.HistoryDown) -> None:
+        hist = self._current_history()
+        result = hist.navigate_down()
+        if self._chat_input.samp_mode and result.startswith("/"):
+            result = result[1:]
+        self._set_input(result)
 
     # ── Chat input handler ─────────────────────────────────────────────────────
 
     @on(ChatInput.Submitted)
     async def _on_chat_submitted(self, event: ChatInput.Submitted) -> None:
         self._close_completion()
+        for hist in (self._samp_history, self._cmd_history, self._chat_history):
+            hist.navigate_reset()
         text = event.value.strip()
         is_samp_command = self._chat_input.samp_mode or text.startswith("/")
         is_tui_command = self._chat_input.command_mode or text.startswith(":")
@@ -438,7 +482,9 @@ class SampShellApp(App):
             return
 
         if is_tui_command:
-            parts = shlex.split(text.lstrip(":"))
+            cmd_text = text.lstrip(":")
+            self._cmd_history.add(cmd_text)
+            parts = shlex.split(cmd_text)
             if not parts:
                 return
             cmd_name = parts[0]
@@ -464,6 +510,7 @@ class SampShellApp(App):
             except Exception as exc:
                 await self._event_log.append_line(f"Send error: {exc}", style="error")
         else:
+            self._chat_history.add(text)
             try:
                 self._bot.send_chat(text)
             except Exception as exc:
