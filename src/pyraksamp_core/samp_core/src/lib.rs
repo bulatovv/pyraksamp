@@ -763,7 +763,6 @@ impl PySAMPClient {
     }
 
     #[getter]
-    #[getter]
     fn get_on_set_virtual_world(&self, py: Python) -> Option<Py<PyAny>> {
         cloned(py, &self.py_cbs.on_set_virtual_world)
     }
