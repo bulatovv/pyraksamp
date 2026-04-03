@@ -32,6 +32,7 @@ from pyraksamp.events import (
     Weather,
     PlayerSkin,
     SetInterior,
+    SetVirtualWorld,
     VehicleStreamIn,
     VehicleStreamOut,
     PlayerDeath,
@@ -249,6 +250,10 @@ def _setup_bridge(
         evt = SetInterior(interior_id=interior_id)
         loop.call_soon_threadsafe(lambda: bus.broadcast(("set_interior", evt)))
 
+    def on_set_virtual_world(world_id: int):
+        evt = SetVirtualWorld(world_id=world_id)
+        loop.call_soon_threadsafe(lambda: bus.broadcast(("set_virtual_world", evt)))
+
     def on_vehicle_streamed_in(
         vid: int,
         model: int,
@@ -396,6 +401,7 @@ def _setup_bridge(
     client.on_weather = on_weather
     client.on_player_skin = on_player_skin
     client.on_set_interior = on_set_interior
+    client.on_set_virtual_world = on_set_virtual_world
     client.on_vehicle_streamed_in = on_vehicle_streamed_in
     client.on_vehicle_streamed_out = on_vehicle_streamed_out
     client.on_player_death = on_player_death

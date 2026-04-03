@@ -61,6 +61,7 @@ const RPC_SET_PLAYER_TEAM: u8 = 69;
 const RPC_PUT_IN_VEHICLE: u8 = 70;
 const RPC_REMOVE_FROM_VEHICLE: u8 = 71;
 const RPC_SET_PLAYER_COLOR: u8 = 72;
+const RPC_SET_VIRTUAL_WORLD: u8 = 48;
 const RPC_SET_WORLD_TIME: u8 = 94;
 const RPC_TOGGLE_SPECTATING: u8 = 124;
 const RPC_SET_WANTED_LEVEL: u8 = 133;
@@ -72,6 +73,9 @@ const RPC_SET_INTERIOR: u8 = 156;
 const RPC_WORLD_VEHICLE_ADD: u8 = 164;
 const RPC_WORLD_VEHICLE_REMOVE: u8 = 165;
 const RPC_DEATH_BROADCAST: u8 = 166;
+
+// Client→server: acknowledge interior change (SAMPRPC.cpp: RPC_SetInteriorId = 118)
+const RPC_INTERIOR_CHANGE_NOTIFY: u8 = 118;
 
 const RPC_CLIENT_JOIN: u8 = 25;
 const RPC_REQUEST_CLASS: u8 = 128;
@@ -101,7 +105,6 @@ const REL_UNRELIABLE_SEQUENCED: u8 = 7;
 const REL_RELIABLE: u8 = 8;
 const REL_RELIABLE_ORDERED: u8 = 9;
 const REL_RELIABLE_SEQUENCED: u8 = 10;
-
 
 // ── Callbacks ─────────────────────────────────────────────────────────────────
 
@@ -144,6 +147,7 @@ pub struct Callbacks {
     pub on_weather: Option<Arc<dyn Fn(u8) + Send + Sync>>,
     pub on_player_skin: Option<Arc<dyn Fn(i32, u32) + Send + Sync>>,
     pub on_set_interior: Option<Arc<dyn Fn(u8) + Send + Sync>>,
+    pub on_set_virtual_world: Option<Arc<dyn Fn(i32) + Send + Sync>>,
     pub on_vehicle_streamed_in: Option<
         Arc<
             dyn Fn(
@@ -249,6 +253,7 @@ impl Callbacks {
             on_weather: None,
             on_player_skin: None,
             on_set_interior: None,
+            on_set_virtual_world: None,
             on_vehicle_streamed_in: None,
             on_vehicle_streamed_out: None,
             on_player_death: None,
@@ -352,10 +357,10 @@ pub struct SampClient {
     ud_analog: AtomicU16,
 
     // Protected state
-    player_id:       Mutex<i32>,
-    challenge:       Mutex<u32>,
-    pending_acks:    Mutex<Vec<u16>>,
-    position:        Mutex<[f32; 3]>,
+    player_id: Mutex<i32>,
+    challenge: Mutex<u32>,
+    pending_acks: Mutex<Vec<u16>>,
+    position: Mutex<[f32; 3]>,
     // (vehicle_id, seat_id); None = on foot
     current_vehicle: Mutex<Option<(u16, u8)>>,
 
@@ -394,10 +399,10 @@ impl SampClient {
             keys: AtomicU16::new(0),
             lr_analog: AtomicU16::new(0),
             ud_analog: AtomicU16::new(0),
-            player_id:       Mutex::new(-1),
-            challenge:       Mutex::new(0),
-            pending_acks:    Mutex::new(Vec::new()),
-            position:        Mutex::new([0.0, 0.0, 3.0]),
+            player_id: Mutex::new(-1),
+            challenge: Mutex::new(0),
+            pending_acks: Mutex::new(Vec::new()),
+            position: Mutex::new([0.0, 0.0, 3.0]),
             current_vehicle: Mutex::new(None),
             callbacks: Mutex::new(Callbacks::new()),
         })
@@ -1024,7 +1029,17 @@ impl SampClient {
 
                 RPC_SET_INTERIOR => {
                     let id = bs.read_uint8().ok()?;
+                    // Server tracks interior via client response RPC 118 (RPC_SetInteriorId,
+                    // SAMPRPC.cpp). Without this echo the server's GetPlayerInterior() stays
+                    // stale and anti-cheat scripts may kick us.
+                    self.send_rpc(RPC_INTERIOR_CHANGE_NOTIFY, &[id], REL_RELIABLE_ORDERED);
                     fire!(self.callbacks, on_set_interior, id);
+                }
+
+                RPC_SET_VIRTUAL_WORLD => {
+                    // SetPlayerVirtualWorld (RPC 48) — server→client only, no response needed.
+                    let vw = bs.read_int32_le().ok()?;
+                    fire!(self.callbacks, on_set_virtual_world, vw);
                 }
 
                 RPC_WORLD_VEHICLE_ADD => {
@@ -1692,7 +1707,11 @@ mod tests {
         let c = make_client();
         let pkt = c.build_keepalive_pkt();
         assert_eq!(pkt[0], ID_PLAYER_SYNC, "packet ID");
-        assert_eq!(&pkt[15..19], &3.0f32.to_le_bytes(), "vecPos.z = 3.0 (default)");
+        assert_eq!(
+            &pkt[15..19],
+            &3.0f32.to_le_bytes(),
+            "vecPos.z = 3.0 (default)"
+        );
         assert_eq!(&pkt[31..35], &1.0f32.to_le_bytes(), "quaternion.w = 1.0");
         assert_eq!(pkt[35], 100, "byteHealth = 100");
         assert_eq!([pkt[63], pkt[64]], [0xFF, 0xFF], "wSurfInfo = 0xFFFF");

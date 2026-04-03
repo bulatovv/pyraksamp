@@ -105,6 +105,7 @@ struct PyCbs {
     on_weather: Option<Py<PyAny>>,
     on_player_skin: Option<Py<PyAny>>,
     on_set_interior: Option<Py<PyAny>>,
+    on_set_virtual_world: Option<Py<PyAny>>,
     on_vehicle_streamed_in: Option<Py<PyAny>>,
     on_vehicle_streamed_out: Option<Py<PyAny>>,
     on_player_death: Option<Py<PyAny>>,
@@ -151,6 +152,7 @@ impl PyCbs {
             on_weather: None,
             on_player_skin: None,
             on_set_interior: None,
+            on_set_virtual_world: None,
             on_vehicle_streamed_in: None,
             on_vehicle_streamed_out: None,
             on_player_death: None,
@@ -758,6 +760,17 @@ impl PySAMPClient {
     fn set_on_set_interior(&mut self, py: Python, cb: Option<Py<PyAny>>) {
         self.py_cbs.on_set_interior = cb.as_ref().map(|c| c.clone_ref(py));
         self.inner.callbacks.lock().unwrap().on_set_interior = cb.map(|c| wrap!(c, id: u8));
+    }
+
+    #[getter]
+    #[getter]
+    fn get_on_set_virtual_world(&self, py: Python) -> Option<Py<PyAny>> {
+        cloned(py, &self.py_cbs.on_set_virtual_world)
+    }
+    #[setter]
+    fn set_on_set_virtual_world(&mut self, py: Python, cb: Option<Py<PyAny>>) {
+        self.py_cbs.on_set_virtual_world = cb.as_ref().map(|c| c.clone_ref(py));
+        self.inner.callbacks.lock().unwrap().on_set_virtual_world = cb.map(|c| wrap!(c, vw: i32));
     }
 
     #[getter]

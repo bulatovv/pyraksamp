@@ -37,6 +37,7 @@ __all__ = [
     "Weather",
     "PlayerSkin",
     "SetInterior",
+    "SetVirtualWorld",
     "VehicleStreamIn",
     "VehicleStreamOut",
     "PlayerDeath",
@@ -276,6 +277,13 @@ class SetInterior:
     """Server set our interior."""
 
     interior_id: int
+
+
+@dataclass(slots=True, frozen=True)
+class SetVirtualWorld:
+    """Server set our virtual world."""
+
+    world_id: int
 
 
 @dataclass(slots=True, frozen=True)
