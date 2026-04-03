@@ -30,7 +30,10 @@ const ID_CONNECTION_REQUEST_ACCEPTED: u8 = 34;
 const ID_CONNECTION_BANNED: u8 = 36;
 const ID_INVALID_PASSWORD: u8 = 37;
 const ID_TIMESTAMP: u8 = 40;
+const ID_VEHICLE_SYNC: u8 = 200;
 const ID_PLAYER_SYNC: u8 = 207;
+const ID_PASSENGER_SYNC: u8 = 211;
+const ID_SPECTATOR_SYNC: u8 = 212;
 
 // ── RPC IDs ──────────────────────────────────────────────────────────────────
 const RPC_SERVER_JOIN: u8 = 137;
@@ -349,9 +352,12 @@ pub struct SampClient {
     ud_analog: AtomicU16,
 
     // Protected state
-    player_id: Mutex<i32>,
-    challenge: Mutex<u32>,
-    pending_acks: Mutex<Vec<u16>>,
+    player_id:       Mutex<i32>,
+    challenge:       Mutex<u32>,
+    pending_acks:    Mutex<Vec<u16>>,
+    position:        Mutex<[f32; 3]>,
+    // (vehicle_id, seat_id); None = on foot
+    current_vehicle: Mutex<Option<(u16, u8)>>,
 
     pub callbacks: Mutex<Callbacks>,
 }
@@ -388,9 +394,11 @@ impl SampClient {
             keys: AtomicU16::new(0),
             lr_analog: AtomicU16::new(0),
             ud_analog: AtomicU16::new(0),
-            player_id: Mutex::new(-1),
-            challenge: Mutex::new(0),
-            pending_acks: Mutex::new(Vec::new()),
+            player_id:       Mutex::new(-1),
+            challenge:       Mutex::new(0),
+            pending_acks:    Mutex::new(Vec::new()),
+            position:        Mutex::new([0.0, 0.0, 3.0]),
+            current_vehicle: Mutex::new(None),
             callbacks: Mutex::new(Callbacks::new()),
         })
     }
@@ -833,6 +841,7 @@ impl SampClient {
                     let x = bs.read_float_le().ok()?;
                     let y = bs.read_float_le().ok()?;
                     let z = bs.read_float_le().ok()?;
+                    *self.position.lock().unwrap() = [x, y, z];
                     fire!(self.callbacks, on_set_position, x, y, z);
                 }
 
@@ -954,10 +963,12 @@ impl SampClient {
                 RPC_PUT_IN_VEHICLE => {
                     let vid = bs.read_uint16_le().ok()?;
                     let seat = bs.read_uint8().ok()?;
+                    *self.current_vehicle.lock().unwrap() = Some((vid, seat));
                     fire!(self.callbacks, on_put_in_vehicle, vid, seat);
                 }
 
                 RPC_REMOVE_FROM_VEHICLE => {
+                    *self.current_vehicle.lock().unwrap() = None;
                     fire!(self.callbacks, on_remove_from_vehicle);
                 }
 
@@ -1205,6 +1216,7 @@ impl SampClient {
                 self.send_reliability_pkt(resp.as_bytes(), REL_UNRELIABLE, 0, 0);
             }
             id if id == ID_DISCONNECTION_NOTIFICATION || id == ID_CONNECTION_LOST => {
+                self.connected.store(false, Ordering::Relaxed);
                 self.running.store(false, Ordering::Relaxed);
                 fire!(self.callbacks, on_disconnect);
             }
@@ -1235,8 +1247,11 @@ impl SampClient {
         pkt[1..3].copy_from_slice(&self.lr_analog.load(Ordering::Relaxed).to_le_bytes());
         pkt[3..5].copy_from_slice(&self.ud_analog.load(Ordering::Relaxed).to_le_bytes());
         pkt[5..7].copy_from_slice(&self.keys.load(Ordering::Relaxed).to_le_bytes());
-        // vecPos.z = 3.0 at offset 14
-        pkt[1 + 14..1 + 18].copy_from_slice(&3.0f32.to_le_bytes());
+        // vecPos at offset 6 — updated on RPC_SET_POSITION
+        let [px, py, pz] = *self.position.lock().unwrap();
+        pkt[1 + 6..1 + 10].copy_from_slice(&px.to_le_bytes());
+        pkt[1 + 10..1 + 14].copy_from_slice(&py.to_le_bytes());
+        pkt[1 + 14..1 + 18].copy_from_slice(&pz.to_le_bytes());
         // fQuaternion.w = 1.0 at offset 30
         pkt[1 + 30..1 + 34].copy_from_slice(&1.0f32.to_le_bytes());
         // byteHealth = 100 at offset 34
@@ -1247,8 +1262,73 @@ impl SampClient {
         pkt
     }
 
-    fn send_keepalive(&self) {
-        self.send_reliability_pkt(&self.build_keepalive_pkt(), REL_UNRELIABLE_SEQUENCED, 0, 0);
+    // SPECTATOR_SYNC_DATA (common.h): lrAnalog(u16) udAnalog(u16) wKeys(u16) vecPos(3xf32) = 18 bytes
+    // Reference: localplayer.cpp SendSpectatorData — UNRELIABLE_SEQUENCED
+    fn build_spectator_pkt(&self) -> Vec<u8> {
+        let mut pkt = vec![0u8; 1 + 18];
+        pkt[0] = ID_SPECTATOR_SYNC;
+        pkt[1..3].copy_from_slice(&self.lr_analog.load(Ordering::Relaxed).to_le_bytes());
+        pkt[3..5].copy_from_slice(&self.ud_analog.load(Ordering::Relaxed).to_le_bytes());
+        pkt[5..7].copy_from_slice(&self.keys.load(Ordering::Relaxed).to_le_bytes());
+        let [px, py, pz] = *self.position.lock().unwrap();
+        pkt[7..11].copy_from_slice(&px.to_le_bytes());
+        pkt[11..15].copy_from_slice(&py.to_le_bytes());
+        pkt[15..19].copy_from_slice(&pz.to_le_bytes());
+        pkt
+    }
+
+    // INCAR_SYNC_DATA (common.h): VehicleID(u16) lrAnalog(u16) udAnalog(u16) wKeys(u16)
+    //   fQuaternion(4xf32) vecPos(3xf32) vecMoveSpeed(3xf32) fCarHealth(f32)
+    //   bytePlayerHealth(u8) bytePlayerArmour(u8) byteCurrentWeapon(u8)
+    //   byteSirenOn(u8) byteLandingGearState(u8) TrailerID_or_ThrustAngle(u16) fTrainSpeed(f32)
+    //   = 63 bytes total
+    // Reference: localplayer.cpp SendInCarFullSyncData — UNRELIABLE_SEQUENCED
+    fn build_vehicle_pkt(&self, vehicle_id: u16) -> Vec<u8> {
+        let mut pkt = vec![0u8; 1 + 63];
+        pkt[0] = ID_VEHICLE_SYNC;
+        pkt[1..3].copy_from_slice(&vehicle_id.to_le_bytes());
+        pkt[3..5].copy_from_slice(&self.lr_analog.load(Ordering::Relaxed).to_le_bytes());
+        pkt[5..7].copy_from_slice(&self.ud_analog.load(Ordering::Relaxed).to_le_bytes());
+        pkt[7..9].copy_from_slice(&self.keys.load(Ordering::Relaxed).to_le_bytes());
+        // fQuaternion[4] at offset 9 — zeroed (stationary)
+        // vecPos at offset 25
+        let [px, py, pz] = *self.position.lock().unwrap();
+        pkt[25..29].copy_from_slice(&px.to_le_bytes());
+        pkt[29..33].copy_from_slice(&py.to_le_bytes());
+        pkt[33..37].copy_from_slice(&pz.to_le_bytes());
+        // vecMoveSpeed at offset 37 — zeroed (stationary)
+        // fCarHealth at offset 49
+        pkt[49..53].copy_from_slice(&1000.0f32.to_le_bytes());
+        // bytePlayerHealth at offset 53
+        pkt[53] = 100;
+        // TrailerID_or_ThrustAngle at struct offset 57 → pkt[58..60] — 0xFFFF = no trailer
+        pkt[58..60].copy_from_slice(&0xFFFFu16.to_le_bytes());
+        pkt
+    }
+
+    // PASSENGER_SYNC_DATA (common.h): VehicleID(u16) byteSeatFlags/byteDriveBy(u8)
+    //   byteCurrentWeapon(u8) bytePlayerHealth(u8) bytePlayerArmour(u8)
+    //   lrAnalog(u16) udAnalog(u16) wKeys(u16) vecPos(3xf32) = 24 bytes
+    // Reference: localplayer.cpp SendPassengerFullSyncData — UNRELIABLE_SEQUENCED
+    fn build_passenger_pkt(&self, vehicle_id: u16, seat: u8) -> Vec<u8> {
+        let mut pkt = vec![0u8; 1 + 24];
+        pkt[0] = ID_PASSENGER_SYNC;
+        pkt[1..3].copy_from_slice(&vehicle_id.to_le_bytes());
+        // byteSeatFlags (lower 7 bits) | byteDriveBy (bit 7)
+        pkt[3] = seat & 0x7F;
+        // byteCurrentWeapon at offset 4 — 0
+        // bytePlayerHealth at offset 5
+        pkt[5] = 100;
+        // lrAnalog at offset 7, udAnalog at offset 9, wKeys at offset 11
+        pkt[7..9].copy_from_slice(&self.lr_analog.load(Ordering::Relaxed).to_le_bytes());
+        pkt[9..11].copy_from_slice(&self.ud_analog.load(Ordering::Relaxed).to_le_bytes());
+        pkt[11..13].copy_from_slice(&self.keys.load(Ordering::Relaxed).to_le_bytes());
+        // vecPos at offset 13
+        let [px, py, pz] = *self.position.lock().unwrap();
+        pkt[13..17].copy_from_slice(&px.to_le_bytes());
+        pkt[17..21].copy_from_slice(&py.to_le_bytes());
+        pkt[21..25].copy_from_slice(&pz.to_le_bytes());
+        pkt
     }
 
     // ─── Public API ───────────────────────────────────────────────────────────
@@ -1305,11 +1385,20 @@ impl SampClient {
                 last_ack_flush = now;
             }
             if now.duration_since(last_keepalive) > Duration::from_millis(500) {
-                // Only send on-foot sync after spawning — the reference (misc_funcs.cpp)
+                // Only send sync after spawning — the reference (misc_funcs.cpp)
                 // calls onFootUpdateAtNormalPos() only inside the iSpawned == 1 branch.
                 // Sending it pre-spawn confuses the server's player state machine.
                 if self.spawned.load(Ordering::Relaxed) {
-                    self.send_keepalive();
+                    let pkt = if self.spectating.load(Ordering::Relaxed) {
+                        self.build_spectator_pkt()
+                    } else {
+                        match *self.current_vehicle.lock().unwrap() {
+                            Some((vid, 0)) => self.build_vehicle_pkt(vid),
+                            Some((vid, seat)) => self.build_passenger_pkt(vid, seat),
+                            None => self.build_keepalive_pkt(),
+                        }
+                    };
+                    self.send_reliability_pkt(&pkt, REL_UNRELIABLE_SEQUENCED, 0, 0);
                 }
                 last_keepalive = now;
             }
@@ -1590,7 +1679,7 @@ mod tests {
         let c = make_client();
         c.set_keys(0xFFFF, 0xFFFF, 0xFFFF);
         let pkt = c.build_keepalive_pkt();
-        // vecPos starts at pkt[7]; x and y (8 bytes) should still be zero
+        // vecPos starts at pkt[7]; x and y are zero (default position is 0,0,3)
         assert_eq!(
             &pkt[7..15],
             &[0u8; 8],
@@ -1603,7 +1692,7 @@ mod tests {
         let c = make_client();
         let pkt = c.build_keepalive_pkt();
         assert_eq!(pkt[0], ID_PLAYER_SYNC, "packet ID");
-        assert_eq!(&pkt[15..19], &3.0f32.to_le_bytes(), "vecPos.z = 3.0");
+        assert_eq!(&pkt[15..19], &3.0f32.to_le_bytes(), "vecPos.z = 3.0 (default)");
         assert_eq!(&pkt[31..35], &1.0f32.to_le_bytes(), "quaternion.w = 1.0");
         assert_eq!(pkt[35], 100, "byteHealth = 100");
         assert_eq!([pkt[63], pkt[64]], [0xFF, 0xFF], "wSurfInfo = 0xFFFF");
