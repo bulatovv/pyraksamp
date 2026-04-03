@@ -9,8 +9,8 @@ from textual.widgets import Static
 
 @dataclass
 class CompletionItem:
-    insert: str       # text inserted into input on confirm
-    label: str        # first column: name + metavar
+    insert: str  # text inserted into input on confirm
+    label: str  # first column: name + metavar
     description: str = field(default="")
 
 
@@ -24,8 +24,8 @@ class CommandHistory:
 
     def __init__(self) -> None:
         self._entries: list[str] = []
-        self._nav_pos: int | None = None   # None = at end (not navigating)
-        self._nav_saved: str = ""          # input captured when navigation started
+        self._nav_pos: int | None = None  # None = at end (not navigating)
+        self._nav_saved: str = ""  # input captured when navigation started
 
     def add(self, command: str) -> None:
         command = command.strip()

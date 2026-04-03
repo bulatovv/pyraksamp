@@ -23,7 +23,9 @@ class CommandRegistry:
     def __init__(self) -> None:
         self._commands: dict[str, Command] = {}
 
-    def register(self, name: str, fn: Callable, help: str = "", metavar: str = "") -> None:
+    def register(
+        self, name: str, fn: Callable, help: str = "", metavar: str = ""
+    ) -> None:
         self._commands[name] = Command(name=name, fn=fn, help=help, metavar=metavar)
 
     def get(self, name: str) -> Command | None:
@@ -100,9 +102,11 @@ async def _cmd_quit(args: list[str], app: SampShellApp) -> None:
 
 
 def _register_builtins(registry: CommandRegistry) -> None:
-    registry.register("help",      _cmd_help,      "List all commands")
-    registry.register("loglevel",  _cmd_loglevel,  "Set log level",          metavar="[logger] <level>")
+    registry.register("help", _cmd_help, "List all commands")
+    registry.register(
+        "loglevel", _cmd_loglevel, "Set log level", metavar="[logger] <level>"
+    )
     registry.register("textdraws", _cmd_textdraws, "Toggle textdraw panel")
-    registry.register("dialogs",   _cmd_dialogs,   "Print dialog history")
-    registry.register("tablist",   _cmd_tablist,   "Show player table")
-    registry.register("quit",      _cmd_quit,      "Exit the shell")
+    registry.register("dialogs", _cmd_dialogs, "Print dialog history")
+    registry.register("tablist", _cmd_tablist, "Show player table")
+    registry.register("quit", _cmd_quit, "Exit the shell")

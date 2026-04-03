@@ -1,53 +1,55 @@
 //! RakNet reliability layer — port of reliability.cpp.
 //! Uses `bitstream` module internally (no C FFI needed within Rust).
 
-use std::collections::{BTreeMap, HashMap};
 use crate::bitstream::BitStream;
+use std::collections::{BTreeMap, HashMap};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 #[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum Reliability {
-    Unreliable          = 6,
+    Unreliable = 6,
     UnreliableSequenced = 7,
-    Reliable            = 8,
-    ReliableOrdered     = 9,
-    ReliableSequenced   = 10,
+    Reliable = 8,
+    ReliableOrdered = 9,
+    ReliableSequenced = 10,
 }
 
 impl Reliability {
     fn from_u8(v: u8) -> Self {
         match v {
-            7  => Self::UnreliableSequenced,
-            8  => Self::Reliable,
-            9  => Self::ReliableOrdered,
+            7 => Self::UnreliableSequenced,
+            8 => Self::Reliable,
+            9 => Self::ReliableOrdered,
             10 => Self::ReliableSequenced,
-            _  => Self::Unreliable,
+            _ => Self::Unreliable,
         }
     }
 
     fn needs_ordering(self) -> bool {
-        matches!(self,
-            Self::ReliableOrdered | Self::ReliableSequenced | Self::UnreliableSequenced)
+        matches!(
+            self,
+            Self::ReliableOrdered | Self::ReliableSequenced | Self::UnreliableSequenced
+        )
     }
 }
 
 pub struct InternalPacket {
-    pub msg_num:          u16,
-    pub reliability:      Reliability,
+    pub msg_num: u16,
+    pub reliability: Reliability,
     pub ordering_channel: u8,
-    pub ordering_index:   u16,
-    pub data:             Vec<u8>,
+    pub ordering_index: u16,
+    pub data: Vec<u8>,
 }
 
 #[allow(dead_code)]
 struct SplitFragment {
-    count:            u32,
-    reliability:      Reliability,
+    count: u32,
+    reliability: Reliability,
     ordering_channel: u8,
-    ordering_index:   u16,
-    chunks:           BTreeMap<u32, Vec<u8>>,
+    ordering_index: u16,
+    chunks: BTreeMap<u32, Vec<u8>>,
 }
 
 pub struct SplitBuffer {
@@ -55,18 +57,22 @@ pub struct SplitBuffer {
 }
 
 impl Default for SplitBuffer {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SplitBuffer {
     pub fn new() -> Self {
-        SplitBuffer { pending: HashMap::new() }
+        SplitBuffer {
+            pending: HashMap::new(),
+        }
     }
 }
 
 pub struct ParseResult {
-    pub is_ack:  bool,
-    pub acked:   Vec<u16>,
+    pub is_ack: bool,
+    pub acked: Vec<u16>,
     pub packets: Vec<InternalPacket>,
 }
 
@@ -75,14 +81,14 @@ pub struct ParseResult {
 pub fn make_packet(data: &[u8], msg_num: u16, rel: u8, oc: u8, oi: u16) -> Vec<u8> {
     let reliability = Reliability::from_u8(rel);
     let mut bs = BitStream::new();
-    bs.write_bool(false);                               // isACK = false
+    bs.write_bool(false); // isACK = false
     bs.write_uint16_le(msg_num);
-    bs.write_bits(&[rel], 4, true);                     // 4-bit reliability field
+    bs.write_bits(&[rel], 4, true); // 4-bit reliability field
     if reliability.needs_ordering() {
         bs.write_bits(&[oc], 5, true);
         bs.write_uint16_le(oi);
     }
-    bs.write_bool(false);                               // isSplitPacket = false
+    bs.write_bool(false); // isSplitPacket = false
     bs.write_compressed_uint16((data.len() * 8) as u16);
     bs.write_aligned_bytes(data);
     bs.as_bytes().to_vec()
@@ -90,10 +96,10 @@ pub fn make_packet(data: &[u8], msg_num: u16, rel: u8, oc: u8, oi: u16) -> Vec<u
 
 pub fn make_ack(nums: &[u16]) -> Vec<u8> {
     let mut bs = BitStream::new();
-    bs.write_bool(true);                                // isACK = true
+    bs.write_bool(true); // isACK = true
     bs.write_compressed_uint16(nums.len() as u16);
     for &n in nums {
-        bs.write_bool(true);                            // isSingle = true
+        bs.write_bool(true); // isSingle = true
         bs.write_uint16_le(n);
     }
     bs.as_bytes().to_vec()
@@ -105,23 +111,31 @@ pub fn parse(data: &[u8], split_buf: &mut SplitBuffer) -> Option<ParseResult> {
     }
 
     let mut bs = BitStream::from_bytes(data);
-    let mut result = ParseResult { is_ack: false, acked: Vec::new(), packets: Vec::new() };
+    let mut result = ParseResult {
+        is_ack: false,
+        acked: Vec::new(),
+        packets: Vec::new(),
+    };
 
     result.is_ack = bs.read_bool().ok()?;
 
     if result.is_ack {
         if let Ok(count) = bs.read_compressed_uint16() {
             for _ in 0..count {
-                if bs.bits_remaining() < 17 { break; }
+                if bs.bits_remaining() < 17 {
+                    break;
+                }
                 let is_single = bs.read_bool().unwrap_or(false);
                 let min_idx = match bs.read_uint16_le() {
-                    Ok(v) => v, Err(_) => break,
+                    Ok(v) => v,
+                    Err(_) => break,
                 };
                 if is_single {
                     result.acked.push(min_idx);
                 } else {
                     let max_idx = match bs.read_uint16_le() {
-                        Ok(v) => v, Err(_) => break,
+                        Ok(v) => v,
+                        Err(_) => break,
                     };
                     for j in min_idx..=max_idx {
                         result.acked.push(j);
@@ -135,60 +149,84 @@ pub fn parse(data: &[u8], split_buf: &mut SplitBuffer) -> Option<ParseResult> {
     // Data packet(s): multiple may be coalesced in one datagram
     while bs.bits_remaining() >= 17 {
         let msg_num = match bs.read_uint16_le() {
-            Ok(v) => v, Err(_) => break,
+            Ok(v) => v,
+            Err(_) => break,
         };
         let mut rel_byte = [0u8];
-        if bs.read_bits(&mut rel_byte, 4, true).is_err() { break; }
+        if bs.read_bits(&mut rel_byte, 4, true).is_err() {
+            break;
+        }
         let reliability = Reliability::from_u8(rel_byte[0]);
 
         let mut ordering_channel = 0u8;
-        let mut ordering_index   = 0u16;
+        let mut ordering_index = 0u16;
         if reliability.needs_ordering() {
             let mut oc = [0u8];
-            if bs.read_bits(&mut oc, 5, true).is_err() { break; }
+            if bs.read_bits(&mut oc, 5, true).is_err() {
+                break;
+            }
             ordering_channel = oc[0];
             ordering_index = match bs.read_uint16_le() {
-                Ok(v) => v, Err(_) => break,
+                Ok(v) => v,
+                Err(_) => break,
             };
         }
 
         let is_split = match bs.read_bool() {
-            Ok(v) => v, Err(_) => break,
+            Ok(v) => v,
+            Err(_) => break,
         };
 
         if is_split {
             let split_id = match bs.read_uint16_le() {
-                Ok(v) => v, Err(_) => break,
+                Ok(v) => v,
+                Err(_) => break,
             };
             let frag_index = match bs.read_compressed_uint32() {
-                Ok(v) => v, Err(_) => break,
+                Ok(v) => v,
+                Err(_) => break,
             };
             let frag_count = match bs.read_compressed_uint32() {
-                Ok(v) => v, Err(_) => break,
+                Ok(v) => v,
+                Err(_) => break,
             };
             let data_bits = match bs.read_compressed_uint16() {
-                Ok(v) => v, Err(_) => break,
+                Ok(v) => v,
+                Err(_) => break,
             };
             let data_bytes = (data_bits as usize).div_ceil(8);
             let mut chunk = vec![0u8; data_bytes];
-            if data_bytes > 0 && bs.read_aligned_bytes(&mut chunk).is_err() { break; }
+            if data_bytes > 0 && bs.read_aligned_bytes(&mut chunk).is_err() {
+                break;
+            }
 
             // Emit an ACK-only packet so the caller ACKs this fragment's msg_num
             result.packets.push(InternalPacket {
-                msg_num, reliability, ordering_channel, ordering_index,
+                msg_num,
+                reliability,
+                ordering_channel,
+                ordering_index,
                 data: Vec::new(),
             });
 
             {
-                let frag = split_buf.pending.entry(split_id).or_insert_with(|| SplitFragment {
-                    count: frag_count, reliability, ordering_channel, ordering_index,
-                    chunks: BTreeMap::new(),
-                });
+                let frag = split_buf
+                    .pending
+                    .entry(split_id)
+                    .or_insert_with(|| SplitFragment {
+                        count: frag_count,
+                        reliability,
+                        ordering_channel,
+                        ordering_index,
+                        chunks: BTreeMap::new(),
+                    });
                 frag.chunks.insert(frag_index, chunk);
             }
 
             // Reassemble when all fragments have arrived
-            let done = split_buf.pending.get(&split_id)
+            let done = split_buf
+                .pending
+                .get(&split_id)
                 .map(|f| f.chunks.len() as u32 == f.count)
                 .unwrap_or(false);
             if done {
@@ -198,11 +236,11 @@ pub fn parse(data: &[u8], split_buf: &mut SplitBuffer) -> Option<ParseResult> {
                     assembled.extend_from_slice(&c);
                 }
                 result.packets.push(InternalPacket {
-                    msg_num:          0,
-                    reliability:      Reliability::Unreliable,
+                    msg_num: 0,
+                    reliability: Reliability::Unreliable,
                     ordering_channel: frag.ordering_channel,
-                    ordering_index:   frag.ordering_index,
-                    data:             assembled,
+                    ordering_index: frag.ordering_index,
+                    data: assembled,
                 });
             }
             continue;
@@ -210,14 +248,21 @@ pub fn parse(data: &[u8], split_buf: &mut SplitBuffer) -> Option<ParseResult> {
 
         // Non-split data packet
         let data_bits = match bs.read_compressed_uint16() {
-            Ok(v) => v, Err(_) => break,
+            Ok(v) => v,
+            Err(_) => break,
         };
         let data_bytes = (data_bits as usize).div_ceil(8);
         let mut pkt_data = vec![0u8; data_bytes];
-        if bs.read_aligned_bytes(&mut pkt_data).is_err() { break; }
+        if bs.read_aligned_bytes(&mut pkt_data).is_err() {
+            break;
+        }
 
         result.packets.push(InternalPacket {
-            msg_num, reliability, ordering_channel, ordering_index, data: pkt_data,
+            msg_num,
+            reliability,
+            ordering_channel,
+            ordering_index,
+            data: pkt_data,
         });
     }
 
@@ -231,20 +276,25 @@ mod tests {
 
     #[allow(clippy::too_many_arguments)]
     fn make_split_frag(
-        msg_num: u16, rel: u8, oc: u8, oi: u16,
-        split_id: u16, frag_idx: u32, frag_count: u32,
+        msg_num: u16,
+        rel: u8,
+        oc: u8,
+        oi: u16,
+        split_id: u16,
+        frag_idx: u32,
+        frag_count: u32,
         data: &[u8],
     ) -> Vec<u8> {
         let reliability = Reliability::from_u8(rel);
         let mut bs = BitStream::new();
-        bs.write_bool(false);                               // isACK = false
+        bs.write_bool(false); // isACK = false
         bs.write_uint16_le(msg_num);
         bs.write_bits(&[rel], 4, true);
         if reliability.needs_ordering() {
             bs.write_bits(&[oc], 5, true);
             bs.write_uint16_le(oi);
         }
-        bs.write_bool(true);                                // isSplit = true
+        bs.write_bool(true); // isSplit = true
         bs.write_uint16_le(split_id);
         bs.write_compressed_uint32(frag_idx);
         bs.write_compressed_uint32(frag_count);
@@ -436,14 +486,14 @@ mod tests {
 
     #[test]
     fn unreliable_smaller_than_sequenced() {
-        let un  = make_packet(b"hello", 0, 6, 0, 0);
+        let un = make_packet(b"hello", 0, 6, 0, 0);
         let seq = make_packet(b"hello", 0, 7, 0, 0);
         assert!(un.len() < seq.len());
     }
 
     #[test]
     fn reliable_same_size_as_unreliable() {
-        let un  = make_packet(b"hello", 0, 6, 0, 0);
+        let un = make_packet(b"hello", 0, 6, 0, 0);
         let rel = make_packet(b"hello", 0, 8, 0, 0);
         assert_eq!(un.len(), rel.len());
     }
@@ -557,8 +607,10 @@ mod tests {
             let pkt = make_ack(&nums);
             let mut sb = SplitBuffer::new();
             let r = parse(&pkt, &mut sb).unwrap();
-            let mut got = r.acked.clone(); got.sort_unstable();
-            let mut exp = nums.clone(); exp.sort_unstable();
+            let mut got = r.acked.clone();
+            got.sort_unstable();
+            let mut exp = nums.clone();
+            exp.sort_unstable();
             assert_eq!(got, exp, "nums={nums:?}");
         }
     }
@@ -569,7 +621,8 @@ mod tests {
         let pkt = make_ack(&nums);
         let mut sb = SplitBuffer::new();
         let r = parse(&pkt, &mut sb).unwrap();
-        let mut got = r.acked.clone(); got.sort_unstable();
+        let mut got = r.acked.clone();
+        got.sort_unstable();
         assert_eq!(got, nums);
     }
 
@@ -591,7 +644,8 @@ mod tests {
         let mut sb = SplitBuffer::new();
         let r = parse(bs.as_bytes(), &mut sb).unwrap();
         assert!(r.is_ack);
-        let mut got = r.acked.clone(); got.sort_unstable();
+        let mut got = r.acked.clone();
+        got.sort_unstable();
         assert_eq!(got, &[3, 4, 5, 6, 7]);
     }
 
@@ -601,11 +655,15 @@ mod tests {
         let mut bs = BitStream::new();
         bs.write_bool(true);
         bs.write_compressed_uint16(2);
-        bs.write_bool(false); bs.write_uint16_le(1); bs.write_uint16_le(3);
-        bs.write_bool(true);  bs.write_uint16_le(10);
+        bs.write_bool(false);
+        bs.write_uint16_le(1);
+        bs.write_uint16_le(3);
+        bs.write_bool(true);
+        bs.write_uint16_le(10);
         let mut sb = SplitBuffer::new();
         let r = parse(bs.as_bytes(), &mut sb).unwrap();
-        let mut got = r.acked.clone(); got.sort_unstable();
+        let mut got = r.acked.clone();
+        got.sort_unstable();
         assert_eq!(got, &[1, 2, 3, 10]);
     }
 
@@ -633,8 +691,12 @@ mod tests {
         let raw = make_coalesced(&[(b"first", 1, 8), (b"second", 2, 8)]);
         let mut sb = SplitBuffer::new();
         let r = parse(&raw, &mut sb).unwrap();
-        let payloads: Vec<_> = r.packets.iter().filter(|p| !p.data.is_empty())
-            .map(|p| p.data.as_slice()).collect();
+        let payloads: Vec<_> = r
+            .packets
+            .iter()
+            .filter(|p| !p.data.is_empty())
+            .map(|p| p.data.as_slice())
+            .collect();
         assert_eq!(payloads.len(), 2);
         assert!(payloads.contains(&b"first".as_slice()));
         assert!(payloads.contains(&b"second".as_slice()));
@@ -664,7 +726,12 @@ mod tests {
             last = parse(&f, &mut sb);
         }
         assert!(sb.pending.is_empty());
-        let assembled = last.unwrap().packets.into_iter().find(|p| !p.data.is_empty()).unwrap();
+        let assembled = last
+            .unwrap()
+            .packets
+            .into_iter()
+            .find(|p| !p.data.is_empty())
+            .unwrap();
         assert_eq!(assembled.data, b"onetwothree");
     }
 
@@ -672,7 +739,14 @@ mod tests {
     fn split_three_frags_all_permutations() {
         let chunks: [&[u8]; 3] = [b"AAA", b"BBB", b"CCC"];
         let expected = b"AAABBBCCC";
-        let perms = [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]];
+        let perms = [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ];
         for perm in &perms {
             let mut sb = SplitBuffer::new();
             let mut last_result = None;
@@ -684,7 +758,10 @@ mod tests {
                 // collect assembled packet from all parse results — just check sb is empty
                 assert!(sb.pending.is_empty(), "perm={perm:?}");
                 let r = last_result.unwrap();
-                r.packets.into_iter().filter(|p| !p.data.is_empty()).collect()
+                r.packets
+                    .into_iter()
+                    .filter(|p| !p.data.is_empty())
+                    .collect()
             };
             assert_eq!(all_data.len(), 1, "perm={perm:?}");
             assert_eq!(all_data[0].data, expected, "perm={perm:?}");
@@ -697,7 +774,7 @@ mod tests {
         // Send frag 0 twice
         let f0a = make_split_frag(1, 8, 0, 0, 5, 0, 2, b"dup");
         let f0b = make_split_frag(2, 8, 0, 0, 5, 0, 2, b"dup");
-        let f1  = make_split_frag(3, 8, 0, 0, 5, 1, 2, b"end");
+        let f1 = make_split_frag(3, 8, 0, 0, 5, 1, 2, b"end");
         parse(&f0a, &mut sb);
         parse(&f0b, &mut sb);
         let r = parse(&f1, &mut sb).unwrap();

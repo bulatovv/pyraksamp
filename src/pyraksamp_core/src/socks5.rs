@@ -8,16 +8,16 @@ use std::time::Duration;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const SOCKS_VER:          u8 = 0x05;
-const AUTH_NONE:          u8 = 0x00;
-const AUTH_USERPASS:      u8 = 0x02;
+const SOCKS_VER: u8 = 0x05;
+const AUTH_NONE: u8 = 0x00;
+const AUTH_USERPASS: u8 = 0x02;
 const AUTH_NO_ACCEPTABLE: u8 = 0xFF;
-const USERPASS_VER:       u8 = 0x01;
-const CMD_UDP_ASSOCIATE:  u8 = 0x03;
-const RSV:                u8 = 0x00;
-const ATYP_IPV4:          u8 = 0x01;
-const ATYP_DOMAIN:        u8 = 0x03;
-const REP_SUCCESS:        u8 = 0x00;
+const USERPASS_VER: u8 = 0x01;
+const CMD_UDP_ASSOCIATE: u8 = 0x03;
+const RSV: u8 = 0x00;
+const ATYP_IPV4: u8 = 0x01;
+const ATYP_DOMAIN: u8 = 0x03;
+const REP_SUCCESS: u8 = 0x00;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -48,7 +48,11 @@ pub fn udp_associate(proxy: &ProxyConfig) -> io::Result<(SocketAddr, TcpStream)>
     stream.set_write_timeout(Some(Duration::from_secs(10)))?;
 
     // ── Method negotiation ────────────────────────────────────────────────────
-    let method = if proxy.auth.is_some() { AUTH_USERPASS } else { AUTH_NONE };
+    let method = if proxy.auth.is_some() {
+        AUTH_USERPASS
+    } else {
+        AUTH_NONE
+    };
     stream.write_all(&[SOCKS_VER, 1u8, method])?;
 
     let mut resp = [0u8; 2];
@@ -59,7 +63,10 @@ pub fn udp_associate(proxy: &ProxyConfig) -> io::Result<(SocketAddr, TcpStream)>
     }
     match resp[1] {
         AUTH_NO_ACCEPTABLE => {
-            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "proxy rejected all auth methods"));
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "proxy rejected all auth methods",
+            ));
         }
         m if m != method => {
             return Err(io::Error::other("proxy chose unexpected auth method"));
@@ -71,7 +78,10 @@ pub fn udp_associate(proxy: &ProxyConfig) -> io::Result<(SocketAddr, TcpStream)>
     if method == AUTH_USERPASS {
         let (user, pass) = proxy.auth.as_ref().unwrap();
         if user.len() > 255 || pass.len() > 255 {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "username or password too long"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "username or password too long",
+            ));
         }
         let mut req = Vec::with_capacity(3 + user.len() + pass.len());
         req.push(USERPASS_VER);
@@ -83,13 +93,27 @@ pub fn udp_associate(proxy: &ProxyConfig) -> io::Result<(SocketAddr, TcpStream)>
 
         stream.read_exact(&mut resp)?;
         if resp[1] != 0x00 {
-            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "SOCKS5 username/password auth failed"));
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "SOCKS5 username/password auth failed",
+            ));
         }
     }
 
     // ── UDP ASSOCIATE request ─────────────────────────────────────────────────
     // We pass 0.0.0.0:0 — the proxy derives our address from the TCP source.
-    let req = [SOCKS_VER, CMD_UDP_ASSOCIATE, RSV, ATYP_IPV4, 0, 0, 0, 0, 0, 0];
+    let req = [
+        SOCKS_VER,
+        CMD_UDP_ASSOCIATE,
+        RSV,
+        ATYP_IPV4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ];
     stream.write_all(&req)?;
 
     // ── Parse reply ───────────────────────────────────────────────────────────
@@ -100,9 +124,10 @@ pub fn udp_associate(proxy: &ProxyConfig) -> io::Result<(SocketAddr, TcpStream)>
         return Err(io::Error::other("unexpected SOCKS version in reply"));
     }
     if hdr[1] != REP_SUCCESS {
-        return Err(io::Error::other(
-            format!("SOCKS5 UDP ASSOCIATE failed: reply code {:#04x}", hdr[1]),
-        ));
+        return Err(io::Error::other(format!(
+            "SOCKS5 UDP ASSOCIATE failed: reply code {:#04x}",
+            hdr[1]
+        )));
     }
 
     let relay: SocketAddr = match hdr[3] {
@@ -134,12 +159,15 @@ pub fn udp_associate(proxy: &ProxyConfig) -> io::Result<(SocketAddr, TcpStream)>
             format!("{}:{}", host, port)
                 .to_socket_addrs()?
                 .next()
-                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "cannot resolve relay host"))?
+                .ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::NotFound, "cannot resolve relay host")
+                })?
         }
         other => {
-            return Err(io::Error::other(
-                format!("unsupported relay address type: {:#04x}", other),
-            ));
+            return Err(io::Error::other(format!(
+                "unsupported relay address type: {:#04x}",
+                other
+            )));
         }
     };
 
@@ -166,7 +194,7 @@ pub fn udp_associate(proxy: &ProxyConfig) -> io::Result<(SocketAddr, TcpStream)>
 pub fn wrap_packet(payload: &[u8], dest: SocketAddr) -> Vec<u8> {
     let mut out = Vec::with_capacity(10 + payload.len());
     out.extend_from_slice(&[0x00, 0x00]); // RSV
-    out.push(0x00);                        // FRAG = 0 (no fragmentation)
+    out.push(0x00); // FRAG = 0 (no fragmentation)
     match dest.ip() {
         IpAddr::V4(v4) => {
             out.push(ATYP_IPV4);
@@ -191,8 +219,12 @@ pub fn wrap_packet(payload: &[u8], dest: SocketAddr) -> Vec<u8> {
 /// payload to the start of the buffer.
 pub fn unwrap_packet(data: &[u8]) -> Option<(Ipv4Addr, usize)> {
     // Minimum for IPv4: 2(RSV) + 1(FRAG) + 1(ATYP) + 4(addr) + 2(port) = 10
-    if data.len() < 10 { return None; }
-    if data[2] != 0x00 { return None; } // fragmentation not supported
+    if data.len() < 10 {
+        return None;
+    }
+    if data[2] != 0x00 {
+        return None;
+    } // fragmentation not supported
     match data[3] {
         ATYP_IPV4 => {
             let src = Ipv4Addr::new(data[4], data[5], data[6], data[7]);
@@ -216,11 +248,11 @@ mod tests {
         let dest: SocketAddr = "1.2.3.4:5678".parse().unwrap();
         let out = wrap_packet(&[], dest);
         assert_eq!(out.len(), 10);
-        assert_eq!(&out[0..2], &[0x00, 0x00]);           // RSV
-        assert_eq!(out[2], 0x00);                         // FRAG = 0
-        assert_eq!(out[3], ATYP_IPV4);                    // ATYP
-        assert_eq!(&out[4..8], &[1, 2, 3, 4]);           // dst addr
-        assert_eq!(&out[8..10], &5678u16.to_be_bytes());  // dst port (big-endian)
+        assert_eq!(&out[0..2], &[0x00, 0x00]); // RSV
+        assert_eq!(out[2], 0x00); // FRAG = 0
+        assert_eq!(out[3], ATYP_IPV4); // ATYP
+        assert_eq!(&out[4..8], &[1, 2, 3, 4]); // dst addr
+        assert_eq!(&out[8..10], &5678u16.to_be_bytes()); // dst port (big-endian)
     }
 
     #[test]
