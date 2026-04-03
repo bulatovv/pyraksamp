@@ -1,178 +1,258 @@
 //! SA:MP 0.3.7 pure-Rust client — port of client.cpp.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{fmt, io};
 
 use crate::socks5;
 
 use crate::bitstream::BitStream;
-use crate::encrypt::{encrypt as samp_encrypt, auth_response as samp_auth_response};
-use crate::reliability::{make_packet, make_ack, parse as rel_parse, SplitBuffer};
+use crate::encrypt::{auth_response as samp_auth_response, encrypt as samp_encrypt};
+use crate::reliability::{make_ack, make_packet, parse as rel_parse, SplitBuffer};
 
 // ── Packet IDs ────────────────────────────────────────────────────────────────
-const ID_INTERNAL_PING:                u8 = 6;
-const ID_CONNECTED_PONG:               u8 = 9;
-const ID_CONNECTION_REQUEST:           u8 = 11;
-const ID_AUTH_KEY:                     u8 = 12;
-const ID_RPC:                          u8 = 20;
-const ID_OPEN_CONNECTION_REQUEST:      u8 = 24;
-const ID_OPEN_CONNECTION_REPLY:        u8 = 25;
-const ID_OPEN_CONNECTION_COOKIE:       u8 = 26;
-const ID_CONNECTION_ATTEMPT_FAILED:    u8 = 29;
-const ID_NEW_INCOMING_CONNECTION:      u8 = 30;
+const ID_INTERNAL_PING: u8 = 6;
+const ID_CONNECTED_PONG: u8 = 9;
+const ID_CONNECTION_REQUEST: u8 = 11;
+const ID_AUTH_KEY: u8 = 12;
+const ID_RPC: u8 = 20;
+const ID_OPEN_CONNECTION_REQUEST: u8 = 24;
+const ID_OPEN_CONNECTION_REPLY: u8 = 25;
+const ID_OPEN_CONNECTION_COOKIE: u8 = 26;
+const ID_CONNECTION_ATTEMPT_FAILED: u8 = 29;
+const ID_NEW_INCOMING_CONNECTION: u8 = 30;
 const ID_NO_FREE_INCOMING_CONNECTIONS: u8 = 31;
-const ID_DISCONNECTION_NOTIFICATION:   u8 = 32;
-const ID_CONNECTION_LOST:              u8 = 33;
-const ID_CONNECTION_REQUEST_ACCEPTED:  u8 = 34;
-const ID_CONNECTION_BANNED:            u8 = 36;
-const ID_INVALID_PASSWORD:             u8 = 37;
-const ID_TIMESTAMP:                    u8 = 40;
-const ID_PLAYER_SYNC:                  u8 = 207;
+const ID_DISCONNECTION_NOTIFICATION: u8 = 32;
+const ID_CONNECTION_LOST: u8 = 33;
+const ID_CONNECTION_REQUEST_ACCEPTED: u8 = 34;
+const ID_CONNECTION_BANNED: u8 = 36;
+const ID_INVALID_PASSWORD: u8 = 37;
+const ID_TIMESTAMP: u8 = 40;
+const ID_PLAYER_SYNC: u8 = 207;
 
 // ── RPC IDs ──────────────────────────────────────────────────────────────────
-const RPC_SERVER_JOIN:          u8 = 137;
-const RPC_SERVER_QUIT:          u8 = 138;
-const RPC_INIT_GAME:            u8 = 139;
-const RPC_CONNECTION_REJ:       u8 = 130;
-const RPC_CHAT:                 u8 = 101;
-const RPC_CLIENT_MESSAGE:       u8 = 93;
-const RPC_DIALOG_BOX:           u8 = 61;
-const RPC_GAME_TEXT:            u8 = 73;
-const RPC_SET_HEALTH:           u8 = 14;
-const RPC_SET_ARMOUR:           u8 = 66;
-const RPC_SET_POSITION:         u8 = 12;
-const RPC_SET_CHECKPOINT:       u8 = 107;
-const RPC_DISABLE_CHECKPOINT:   u8 = 37;
-const RPC_WORLD_PLAYER_ADD:     u8 = 32;
-const RPC_WORLD_PLAYER_REMOVE:  u8 = 163;
-const RPC_SET_PLAYER_NAME:      u8 = 11;
-const RPC_TOGGLE_CONTROLLABLE:  u8 = 15;
-const RPC_SET_PLAYER_TIME:      u8 = 29;
-const RPC_SEND_DEATH_MESSAGE:   u8 = 55;
-const RPC_SET_ARMED_WEAPON:     u8 = 67;
-const RPC_SET_SPAWN_INFO:       u8 = 68;
-const RPC_SET_PLAYER_TEAM:      u8 = 69;
-const RPC_PUT_IN_VEHICLE:       u8 = 70;
-const RPC_REMOVE_FROM_VEHICLE:  u8 = 71;
-const RPC_SET_PLAYER_COLOR:     u8 = 72;
-const RPC_SET_WORLD_TIME:       u8 = 94;
-const RPC_TOGGLE_SPECTATING:    u8 = 124;
-const RPC_SET_WANTED_LEVEL:     u8 = 133;
-const RPC_SET_WEAPON_AMMO:      u8 = 145;
-const RPC_SET_GRAVITY:          u8 = 146;
-const RPC_SET_WEATHER:          u8 = 152;
-const RPC_SET_PLAYER_SKIN:      u8 = 153;
-const RPC_SET_INTERIOR:         u8 = 156;
-const RPC_WORLD_VEHICLE_ADD:    u8 = 164;
+const RPC_SERVER_JOIN: u8 = 137;
+const RPC_SERVER_QUIT: u8 = 138;
+const RPC_INIT_GAME: u8 = 139;
+const RPC_CONNECTION_REJ: u8 = 130;
+const RPC_CHAT: u8 = 101;
+const RPC_CLIENT_MESSAGE: u8 = 93;
+const RPC_DIALOG_BOX: u8 = 61;
+const RPC_GAME_TEXT: u8 = 73;
+const RPC_SET_HEALTH: u8 = 14;
+const RPC_SET_ARMOUR: u8 = 66;
+const RPC_SET_POSITION: u8 = 12;
+const RPC_SET_CHECKPOINT: u8 = 107;
+const RPC_DISABLE_CHECKPOINT: u8 = 37;
+const RPC_WORLD_PLAYER_ADD: u8 = 32;
+const RPC_WORLD_PLAYER_REMOVE: u8 = 163;
+const RPC_SET_PLAYER_NAME: u8 = 11;
+const RPC_TOGGLE_CONTROLLABLE: u8 = 15;
+const RPC_SET_PLAYER_TIME: u8 = 29;
+const RPC_SEND_DEATH_MESSAGE: u8 = 55;
+const RPC_SET_ARMED_WEAPON: u8 = 67;
+const RPC_SET_SPAWN_INFO: u8 = 68;
+const RPC_SET_PLAYER_TEAM: u8 = 69;
+const RPC_PUT_IN_VEHICLE: u8 = 70;
+const RPC_REMOVE_FROM_VEHICLE: u8 = 71;
+const RPC_SET_PLAYER_COLOR: u8 = 72;
+const RPC_SET_WORLD_TIME: u8 = 94;
+const RPC_TOGGLE_SPECTATING: u8 = 124;
+const RPC_SET_WANTED_LEVEL: u8 = 133;
+const RPC_SET_WEAPON_AMMO: u8 = 145;
+const RPC_SET_GRAVITY: u8 = 146;
+const RPC_SET_WEATHER: u8 = 152;
+const RPC_SET_PLAYER_SKIN: u8 = 153;
+const RPC_SET_INTERIOR: u8 = 156;
+const RPC_WORLD_VEHICLE_ADD: u8 = 164;
 const RPC_WORLD_VEHICLE_REMOVE: u8 = 165;
-const RPC_DEATH_BROADCAST:      u8 = 166;
+const RPC_DEATH_BROADCAST: u8 = 166;
 
-const RPC_CLIENT_JOIN:     u8 = 25;
-const RPC_REQUEST_CLASS:   u8 = 128;
-const RPC_REQUEST_SPAWN:   u8 = 129;
-const RPC_SPAWN:           u8 = 52;
+const RPC_CLIENT_JOIN: u8 = 25;
+const RPC_REQUEST_CLASS: u8 = 128;
+const RPC_REQUEST_SPAWN: u8 = 129;
+const RPC_SPAWN: u8 = 52;
 const RPC_DIALOG_RESPONSE: u8 = 62;
-const RPC_DEATH:           u8 = 53;
-const RPC_ENTER_VEHICLE:   u8 = 26;
-const RPC_EXIT_VEHICLE:    u8 = 154;
-const RPC_SERVER_COMMAND:  u8 = 50;
-const RPC_UPDATE_SCORES:   u8 = 155;
+const RPC_DEATH: u8 = 53;
+const RPC_ENTER_VEHICLE: u8 = 26;
+const RPC_EXIT_VEHICLE: u8 = 154;
+const RPC_SERVER_COMMAND: u8 = 50;
+const RPC_UPDATE_SCORES: u8 = 155;
 
 // TextDraw RPCs
-const RPC_TEXTDRAW_SHOW:          u8 = 134;
-const RPC_TEXTDRAW_HIDE:          u8 = 135;
-const RPC_TEXTDRAW_EDIT:          u8 = 105;
+const RPC_TEXTDRAW_SHOW: u8 = 134;
+const RPC_TEXTDRAW_HIDE: u8 = 135;
+const RPC_TEXTDRAW_EDIT: u8 = 105;
 const RPC_TEXTDRAW_TOGGLE_SELECT: u8 = 83;
-const RPC_TEXTDRAW_SELECT:        u8 = 83;
+const RPC_TEXTDRAW_SELECT: u8 = 83;
 
-const NETGAME_VERSION:       u32 = 4057;
+const NETGAME_VERSION: u32 = 4057;
 const NETCODE_CONNCOOKIELULZ: u16 = 0x6969;
 const DEFAULT_GPCI: &str = "3E9B8D0C4A7F2E6B1D5A3C9E8F2B4D6A0C7E9B3";
 
 // Reliability constants (SAMP legacy offset)
-const REL_UNRELIABLE:           u8 = 6;
+const REL_UNRELIABLE: u8 = 6;
 const REL_UNRELIABLE_SEQUENCED: u8 = 7;
-const REL_RELIABLE:             u8 = 8;
-const REL_RELIABLE_ORDERED:     u8 = 9;
-const REL_RELIABLE_SEQUENCED:   u8 = 10;
+const REL_RELIABLE: u8 = 8;
+const REL_RELIABLE_ORDERED: u8 = 9;
+const REL_RELIABLE_SEQUENCED: u8 = 10;
 
-fn needs_ordering(rel: u8) -> bool {
-    rel == REL_UNRELIABLE_SEQUENCED || rel == REL_RELIABLE_ORDERED || rel == REL_RELIABLE_SEQUENCED
-}
 
 // ── Callbacks ─────────────────────────────────────────────────────────────────
 
 #[allow(clippy::type_complexity)]
 pub struct Callbacks {
-    pub on_connect:             Option<Arc<dyn Fn() + Send + Sync>>,
-    pub on_disconnect:          Option<Arc<dyn Fn() + Send + Sync>>,
-    pub on_rpc:                 Option<Arc<dyn Fn(u8, Vec<u8>) + Send + Sync>>,
-    pub on_player_join:         Option<Arc<dyn Fn(u16, String) + Send + Sync>>,
-    pub on_player_quit:         Option<Arc<dyn Fn(u16, u8) + Send + Sync>>,
-    pub on_chat:                Option<Arc<dyn Fn(u16, Vec<u8>) + Send + Sync>>,
-    pub on_client_message:      Option<Arc<dyn Fn(u32, Vec<u8>) + Send + Sync>>,
-    pub on_dialog:              Option<Arc<dyn Fn(u16, u8, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) + Send + Sync>>,
-    pub on_game_text:           Option<Arc<dyn Fn(i32, i32, String) + Send + Sync>>,
-    pub on_set_health:          Option<Arc<dyn Fn(f32) + Send + Sync>>,
-    pub on_set_armour:          Option<Arc<dyn Fn(f32) + Send + Sync>>,
-    pub on_set_position:        Option<Arc<dyn Fn(f32, f32, f32) + Send + Sync>>,
-    pub on_checkpoint:          Option<Arc<dyn Fn(f32, f32, f32, f32) + Send + Sync>>,
+    pub on_connect: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub on_disconnect: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub on_rpc: Option<Arc<dyn Fn(u8, Vec<u8>) + Send + Sync>>,
+    pub on_player_join: Option<Arc<dyn Fn(u16, String) + Send + Sync>>,
+    pub on_player_quit: Option<Arc<dyn Fn(u16, u8) + Send + Sync>>,
+    pub on_chat: Option<Arc<dyn Fn(u16, Vec<u8>) + Send + Sync>>,
+    pub on_client_message: Option<Arc<dyn Fn(u32, Vec<u8>) + Send + Sync>>,
+    pub on_dialog: Option<Arc<dyn Fn(u16, u8, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) + Send + Sync>>,
+    pub on_game_text: Option<Arc<dyn Fn(i32, i32, String) + Send + Sync>>,
+    pub on_set_health: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+    pub on_set_armour: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+    pub on_set_position: Option<Arc<dyn Fn(f32, f32, f32) + Send + Sync>>,
+    pub on_checkpoint: Option<Arc<dyn Fn(f32, f32, f32, f32) + Send + Sync>>,
     pub on_checkpoint_disabled: Option<Arc<dyn Fn() + Send + Sync>>,
-    pub on_player_streamed_in:  Option<Arc<dyn Fn(u16, u8, i32, f32, f32, f32, f32, u32, u8) + Send + Sync>>,
+    pub on_player_streamed_in:
+        Option<Arc<dyn Fn(u16, u8, i32, f32, f32, f32, f32, u32, u8) + Send + Sync>>,
     pub on_player_streamed_out: Option<Arc<dyn Fn(u16) + Send + Sync>>,
-    pub on_player_name:         Option<Arc<dyn Fn(u16, String, u8) + Send + Sync>>,
+    pub on_player_name: Option<Arc<dyn Fn(u16, String, u8) + Send + Sync>>,
     pub on_toggle_controllable: Option<Arc<dyn Fn(u8) + Send + Sync>>,
-    pub on_player_time:         Option<Arc<dyn Fn(u8, u8) + Send + Sync>>,
-    pub on_death_message:       Option<Arc<dyn Fn(u16, u16, u8) + Send + Sync>>,
-    pub on_set_armed_weapon:    Option<Arc<dyn Fn(u32) + Send + Sync>>,
-    pub on_spawn_info:          Option<Arc<dyn Fn(u8, u32, f32, f32, f32, f32, u32, u32, u32, u32, u32, u32) + Send + Sync>>,
-    pub on_player_team:         Option<Arc<dyn Fn(u16, u8) + Send + Sync>>,
-    pub on_put_in_vehicle:      Option<Arc<dyn Fn(u16, u8) + Send + Sync>>,
+    pub on_player_time: Option<Arc<dyn Fn(u8, u8) + Send + Sync>>,
+    pub on_death_message: Option<Arc<dyn Fn(u16, u16, u8) + Send + Sync>>,
+    pub on_set_armed_weapon: Option<Arc<dyn Fn(u32) + Send + Sync>>,
+    pub on_spawn_info: Option<
+        Arc<dyn Fn(u8, u32, f32, f32, f32, f32, u32, u32, u32, u32, u32, u32) + Send + Sync>,
+    >,
+    pub on_player_team: Option<Arc<dyn Fn(u16, u8) + Send + Sync>>,
+    pub on_put_in_vehicle: Option<Arc<dyn Fn(u16, u8) + Send + Sync>>,
     pub on_remove_from_vehicle: Option<Arc<dyn Fn() + Send + Sync>>,
-    pub on_player_color:        Option<Arc<dyn Fn(u16, u32) + Send + Sync>>,
-    pub on_world_time:          Option<Arc<dyn Fn(u8) + Send + Sync>>,
-    pub on_toggle_spectating:   Option<Arc<dyn Fn(bool) + Send + Sync>>,
-    pub on_wanted_level:        Option<Arc<dyn Fn(u8) + Send + Sync>>,
-    pub on_weapon_ammo:         Option<Arc<dyn Fn(u8, u16) + Send + Sync>>,
-    pub on_gravity:             Option<Arc<dyn Fn(f32) + Send + Sync>>,
-    pub on_weather:             Option<Arc<dyn Fn(u8) + Send + Sync>>,
-    pub on_player_skin:         Option<Arc<dyn Fn(i32, u32) + Send + Sync>>,
-    pub on_set_interior:        Option<Arc<dyn Fn(u8) + Send + Sync>>,
-    pub on_vehicle_streamed_in: Option<Arc<dyn Fn(u16, i32, f32, f32, f32, f32, u8, u8, f32, u8, u32, u32, u8, u8, u8, u8, u32, u32) + Send + Sync>>,
-    pub on_vehicle_streamed_out:Option<Arc<dyn Fn(u16) + Send + Sync>>,
-    pub on_player_death:        Option<Arc<dyn Fn(u16) + Send + Sync>>,
-    pub on_textdraw_show:          Option<Arc<dyn Fn(u16,u8,f32,f32,u32,f32,f32,u32,u8,u8,u32,u8,u8,f32,f32,u16,f32,f32,f32,f32,i16,i16,String) + Send + Sync>>,
-    pub on_textdraw_hide:          Option<Arc<dyn Fn(u16) + Send + Sync>>,
-    pub on_textdraw_edit:          Option<Arc<dyn Fn(u16, String) + Send + Sync>>,
+    pub on_player_color: Option<Arc<dyn Fn(u16, u32) + Send + Sync>>,
+    pub on_world_time: Option<Arc<dyn Fn(u8) + Send + Sync>>,
+    pub on_toggle_spectating: Option<Arc<dyn Fn(bool) + Send + Sync>>,
+    pub on_wanted_level: Option<Arc<dyn Fn(u8) + Send + Sync>>,
+    pub on_weapon_ammo: Option<Arc<dyn Fn(u8, u16) + Send + Sync>>,
+    pub on_gravity: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+    pub on_weather: Option<Arc<dyn Fn(u8) + Send + Sync>>,
+    pub on_player_skin: Option<Arc<dyn Fn(i32, u32) + Send + Sync>>,
+    pub on_set_interior: Option<Arc<dyn Fn(u8) + Send + Sync>>,
+    pub on_vehicle_streamed_in: Option<
+        Arc<
+            dyn Fn(
+                    u16,
+                    i32,
+                    f32,
+                    f32,
+                    f32,
+                    f32,
+                    u8,
+                    u8,
+                    f32,
+                    u8,
+                    u32,
+                    u32,
+                    u8,
+                    u8,
+                    u8,
+                    u8,
+                    u32,
+                    u32,
+                ) + Send
+                + Sync,
+        >,
+    >,
+    pub on_vehicle_streamed_out: Option<Arc<dyn Fn(u16) + Send + Sync>>,
+    pub on_player_death: Option<Arc<dyn Fn(u16) + Send + Sync>>,
+    pub on_textdraw_show: Option<
+        Arc<
+            dyn Fn(
+                    u16,
+                    u8,
+                    f32,
+                    f32,
+                    u32,
+                    f32,
+                    f32,
+                    u32,
+                    u8,
+                    u8,
+                    u32,
+                    u8,
+                    u8,
+                    f32,
+                    f32,
+                    u16,
+                    f32,
+                    f32,
+                    f32,
+                    f32,
+                    i16,
+                    i16,
+                    String,
+                ) + Send
+                + Sync,
+        >,
+    >,
+    pub on_textdraw_hide: Option<Arc<dyn Fn(u16) + Send + Sync>>,
+    pub on_textdraw_edit: Option<Arc<dyn Fn(u16, String) + Send + Sync>>,
     pub on_textdraw_toggle_select: Option<Arc<dyn Fn(bool, u32) + Send + Sync>>,
 }
 
 impl Default for Callbacks {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Callbacks {
     pub fn new() -> Self {
         Callbacks {
-            on_connect: None, on_disconnect: None, on_rpc: None,
-            on_player_join: None, on_player_quit: None,
-            on_chat: None, on_client_message: None, on_dialog: None,
-            on_game_text: None, on_set_health: None, on_set_armour: None,
-            on_set_position: None, on_checkpoint: None, on_checkpoint_disabled: None,
-            on_player_streamed_in: None, on_player_streamed_out: None,
-            on_player_name: None, on_toggle_controllable: None,
-            on_player_time: None, on_death_message: None, on_set_armed_weapon: None,
-            on_spawn_info: None, on_player_team: None, on_put_in_vehicle: None,
-            on_remove_from_vehicle: None, on_player_color: None, on_world_time: None,
-            on_toggle_spectating: None, on_wanted_level: None, on_weapon_ammo: None,
-            on_gravity: None, on_weather: None, on_player_skin: None,
-            on_set_interior: None, on_vehicle_streamed_in: None,
-            on_vehicle_streamed_out: None, on_player_death: None,
-            on_textdraw_show: None, on_textdraw_hide: None,
-            on_textdraw_edit: None, on_textdraw_toggle_select: None,
+            on_connect: None,
+            on_disconnect: None,
+            on_rpc: None,
+            on_player_join: None,
+            on_player_quit: None,
+            on_chat: None,
+            on_client_message: None,
+            on_dialog: None,
+            on_game_text: None,
+            on_set_health: None,
+            on_set_armour: None,
+            on_set_position: None,
+            on_checkpoint: None,
+            on_checkpoint_disabled: None,
+            on_player_streamed_in: None,
+            on_player_streamed_out: None,
+            on_player_name: None,
+            on_toggle_controllable: None,
+            on_player_time: None,
+            on_death_message: None,
+            on_set_armed_weapon: None,
+            on_spawn_info: None,
+            on_player_team: None,
+            on_put_in_vehicle: None,
+            on_remove_from_vehicle: None,
+            on_player_color: None,
+            on_world_time: None,
+            on_toggle_spectating: None,
+            on_wanted_level: None,
+            on_weapon_ammo: None,
+            on_gravity: None,
+            on_weather: None,
+            on_player_skin: None,
+            on_set_interior: None,
+            on_vehicle_streamed_in: None,
+            on_vehicle_streamed_out: None,
+            on_player_death: None,
+            on_textdraw_show: None,
+            on_textdraw_hide: None,
+            on_textdraw_edit: None,
+            on_textdraw_toggle_select: None,
         }
     }
 }
@@ -216,15 +296,15 @@ pub enum ConnectError {
 impl fmt::Display for ConnectError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ConnectError::HostResolution    => write!(f, "could not resolve server host"),
-            ConnectError::SocketBind(e)     => write!(f, "failed to bind UDP socket: {e}"),
-            ConnectError::Proxy(e)          => write!(f, "SOCKS5 proxy error: {e}"),
-            ConnectError::HandshakeTimeout  => write!(f, "connection handshake timed out"),
+            ConnectError::HostResolution => write!(f, "could not resolve server host"),
+            ConnectError::SocketBind(e) => write!(f, "failed to bind UDP socket: {e}"),
+            ConnectError::Proxy(e) => write!(f, "SOCKS5 proxy error: {e}"),
+            ConnectError::HandshakeTimeout => write!(f, "connection handshake timed out"),
             ConnectError::ConnectionTimeout => write!(f, "connection request timed out"),
-            ConnectError::Rejected          => write!(f, "connection attempt failed"),
-            ConnectError::Banned            => write!(f, "banned from server"),
-            ConnectError::InvalidPassword   => write!(f, "invalid server password"),
-            ConnectError::NoFreeSlots       => write!(f, "server is full"),
+            ConnectError::Rejected => write!(f, "connection attempt failed"),
+            ConnectError::Banned => write!(f, "banned from server"),
+            ConnectError::InvalidPassword => write!(f, "invalid server password"),
+            ConnectError::NoFreeSlots => write!(f, "server is full"),
         }
     }
 }
@@ -234,80 +314,93 @@ impl std::error::Error for ConnectError {}
 // ── Network helpers ───────────────────────────────────────────────────────────
 
 struct NetState {
-    sock:        Arc<UdpSocket>,
+    sock: Arc<UdpSocket>,
     server_addr: SocketAddr,
     /// SOCKS5: relay address to send UDP datagrams to.
-    relay_addr:  Option<SocketAddr>,
+    relay_addr: Option<SocketAddr>,
     /// SOCKS5: TCP control connection.  Must stay alive for the relay to work.
-    _tcp_ctrl:   Option<TcpStream>,
+    _tcp_ctrl: Option<TcpStream>,
 }
 
 // ── SampClient ────────────────────────────────────────────────────────────────
 
 pub struct SampClient {
     // Config (immutable after construction)
-    port:     u16,
+    port: u16,
     nickname: String,
     password: String,
-    gpci:     String,
-    host:     String,
-    proxy:    Option<socks5::ProxyConfig>,
+    gpci: String,
+    host: String,
+    proxy: Option<socks5::ProxyConfig>,
 
     // Network (set once in connect())
     net: Mutex<Option<NetState>>,
 
     // Atomic state
     pub connected: AtomicBool,
-    pub running:   AtomicBool,
-    spawned:       AtomicBool,
-    spectating:    AtomicBool,
-    send_msg_num:  AtomicU16,
-    ordering_idx:  AtomicU16,
-    keys:          AtomicU16,
-    lr_analog:     AtomicU16,
-    ud_analog:     AtomicU16,
+    pub running: AtomicBool,
+    spawned: AtomicBool,
+    spectating: AtomicBool,
+    send_msg_num: AtomicU16,
+    ordering_idx: AtomicU16,  // for RELIABLE_ORDERED
+    sequenced_idx: AtomicU16, // for UNRELIABLE_SEQUENCED / RELIABLE_SEQUENCED
+    keys: AtomicU16,
+    lr_analog: AtomicU16,
+    ud_analog: AtomicU16,
 
     // Protected state
-    player_id:    Mutex<i32>,
-    challenge:    Mutex<u32>,
+    player_id: Mutex<i32>,
+    challenge: Mutex<u32>,
     pending_acks: Mutex<Vec<u16>>,
 
     pub callbacks: Mutex<Callbacks>,
 }
 
 impl SampClient {
-    pub fn new(host: &str, port: u16, nickname: &str, password: &str, gpci: &str, proxy: Option<socks5::ProxyConfig>) -> Arc<Self> {
+    pub fn new(
+        host: &str,
+        port: u16,
+        nickname: &str,
+        password: &str,
+        gpci: &str,
+        proxy: Option<socks5::ProxyConfig>,
+    ) -> Arc<Self> {
         let gpci = if gpci.is_empty() {
             DEFAULT_GPCI.to_string()
         } else {
             gpci.to_string()
         };
         Arc::new(SampClient {
-            host:         host.to_string(),
+            host: host.to_string(),
             port,
-            nickname:     nickname.to_string(),
-            password:     password.to_string(),
+            nickname: nickname.to_string(),
+            password: password.to_string(),
             gpci,
             proxy,
-            net:          Mutex::new(None),
-            connected:    AtomicBool::new(false),
-            running:      AtomicBool::new(false),
-            spawned:      AtomicBool::new(false),
-            spectating:   AtomicBool::new(false),
+            net: Mutex::new(None),
+            connected: AtomicBool::new(false),
+            running: AtomicBool::new(false),
+            spawned: AtomicBool::new(false),
+            spectating: AtomicBool::new(false),
             send_msg_num: AtomicU16::new(0),
             ordering_idx: AtomicU16::new(0),
-            keys:         AtomicU16::new(0),
-            lr_analog:    AtomicU16::new(0),
-            ud_analog:    AtomicU16::new(0),
-            player_id:    Mutex::new(-1),
-            challenge:    Mutex::new(0),
+            sequenced_idx: AtomicU16::new(0),
+            keys: AtomicU16::new(0),
+            lr_analog: AtomicU16::new(0),
+            ud_analog: AtomicU16::new(0),
+            player_id: Mutex::new(-1),
+            challenge: Mutex::new(0),
             pending_acks: Mutex::new(Vec::new()),
-            callbacks:    Mutex::new(Callbacks::new()),
+            callbacks: Mutex::new(Callbacks::new()),
         })
     }
 
-    pub fn is_connected(&self) -> bool { self.connected.load(Ordering::Relaxed) }
-    pub fn player_id(&self)    -> i32  { *self.player_id.lock().unwrap() }
+    pub fn is_connected(&self) -> bool {
+        self.connected.load(Ordering::Relaxed)
+    }
+    pub fn player_id(&self) -> i32 {
+        *self.player_id.lock().unwrap()
+    }
 
     /// Extract `(socket, server_ipv4, relay_ipv4)` from the active `NetState`.
     ///
@@ -349,15 +442,19 @@ impl SampClient {
 
     fn send_reliability_pkt(&self, data: &[u8], rel: u8, oc: u8, mut oi: u16) {
         let num = self.send_msg_num.fetch_add(1, Ordering::Relaxed);
-        if needs_ordering(rel) {
+        if rel == REL_RELIABLE_ORDERED {
             oi = self.ordering_idx.fetch_add(1, Ordering::Relaxed);
+        } else if rel == REL_UNRELIABLE_SEQUENCED || rel == REL_RELIABLE_SEQUENCED {
+            oi = self.sequenced_idx.fetch_add(1, Ordering::Relaxed);
         }
         let pkt = make_packet(data, num, rel, oc, oi);
         self.send_encrypted(&pkt);
     }
 
     fn send_acks(&self, nums: &[u16]) {
-        if nums.is_empty() { return; }
+        if nums.is_empty() {
+            return;
+        }
         let pkt = make_ack(nums);
         self.send_encrypted(&pkt);
     }
@@ -386,8 +483,8 @@ impl SampClient {
     // ─── Handshake phase ──────────────────────────────────────────────────────
 
     fn do_handshake(&self, timeout: Duration) -> Result<(), ConnectError> {
-        let (sock, server_v4, relay_v4) = self.net_recv_params()
-            .ok_or(ConnectError::HostResolution)?;
+        let (sock, server_v4, relay_v4) =
+            self.net_recv_params().ok_or(ConnectError::HostResolution)?;
 
         let req = [ID_OPEN_CONNECTION_REQUEST, 0, 0];
         self.send_encrypted(&req);
@@ -418,9 +515,13 @@ impl SampClient {
     }
 
     fn handle_auth_key_raw(&self, data: &[u8]) {
-        if data.len() < 2 { return; }
+        if data.len() < 2 {
+            return;
+        }
         let key_len = data[1] as usize;
-        if data.len() < 2 + key_len { return; }
+        if data.len() < 2 + key_len {
+            return;
+        }
 
         // Challenge: strip trailing null bytes
         let raw = &data[2..2 + key_len];
@@ -439,12 +540,20 @@ impl SampClient {
     }
 
     fn handle_connection_accepted_raw(&self, data: &[u8]) {
-        if data.len() < 9 { return; }
+        if data.len() < 9 {
+            return;
+        }
         let mut bs = BitStream::from_bytes(data);
         // Skip: ID_CONNECTION_REQUEST_ACCEPTED(8b) + binaryAddress(32b) + port(16b)
         bs.skip_bits(56);
-        let pid: u16  = match bs.read_uint16_le() { Ok(v) => v, Err(_) => return };
-        let chal: u32 = match bs.read_uint32_le()  { Ok(v) => v, Err(_) => return };
+        let pid: u16 = match bs.read_uint16_le() {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        let chal: u32 = match bs.read_uint32_le() {
+            Ok(v) => v,
+            Err(_) => return,
+        };
 
         *self.player_id.lock().unwrap() = pid as i32;
         *self.challenge.lock().unwrap() = chal;
@@ -473,11 +582,19 @@ impl SampClient {
     fn send_client_join(&self) {
         let nick = {
             let n = &self.nickname;
-            if n.len() > 20 { n[..20].to_string() } else { n.clone() }
+            if n.len() > 20 {
+                n[..20].to_string()
+            } else {
+                n.clone()
+            }
         };
         let gpci = {
             let g = &self.gpci;
-            if g.len() > 63 { g[..63].to_string() } else { g.clone() }
+            if g.len() > 63 {
+                g[..63].to_string()
+            } else {
+                g.clone()
+            }
         };
         let ver = "0.3.7";
         let challenge = *self.challenge.lock().unwrap();
@@ -505,8 +622,8 @@ impl SampClient {
     }
 
     fn do_connection_request(&self, timeout: Duration) -> Result<(), ConnectError> {
-        let (sock, server_v4, relay_v4) = self.net_recv_params()
-            .ok_or(ConnectError::HostResolution)?;
+        let (sock, server_v4, relay_v4) =
+            self.net_recv_params().ok_or(ConnectError::HostResolution)?;
 
         let mut cr = vec![ID_CONNECTION_REQUEST];
         if !self.password.is_empty() {
@@ -519,7 +636,14 @@ impl SampClient {
         let mut split_buf = SplitBuffer::new();
 
         loop {
-            let n = match recv_deadline_cap(&sock, &mut buf, server_v4, deadline, Duration::from_millis(500), relay_v4) {
+            let n = match recv_deadline_cap(
+                &sock,
+                &mut buf,
+                server_v4,
+                deadline,
+                Duration::from_millis(500),
+                relay_v4,
+            ) {
                 None => return Err(ConnectError::ConnectionTimeout),
                 Some(n) => n,
             };
@@ -534,17 +658,24 @@ impl SampClient {
                 Some(r) => r,
                 None => continue,
             };
-            if result.is_ack { continue; }
+            if result.is_ack {
+                continue;
+            }
 
             for pkt in &result.packets {
+                // ACK all three reliable types — mirrors ReliabilityLayer.cpp:455:
+                // "if RELIABLE_SEQUENCED || RELIABLE_ORDERED || RELIABLE"
                 if pkt.reliability == crate::reliability::Reliability::Reliable
                     || pkt.reliability == crate::reliability::Reliability::ReliableOrdered
+                    || pkt.reliability == crate::reliability::Reliability::ReliableSequenced
                 {
                     self.pending_acks.lock().unwrap().push(pkt.msg_num);
                 }
                 self.flush_acks();
 
-                if pkt.data.is_empty() { continue; }
+                if pkt.data.is_empty() {
+                    continue;
+                }
                 match pkt.data[0] {
                     id if id == ID_AUTH_KEY => {
                         self.handle_auth_key_raw(&pkt.data);
@@ -554,10 +685,12 @@ impl SampClient {
                         self.connected.store(true, Ordering::Relaxed);
                         return Ok(());
                     }
-                    id if id == ID_CONNECTION_BANNED            => return Err(ConnectError::Banned),
-                    id if id == ID_INVALID_PASSWORD             => return Err(ConnectError::InvalidPassword),
-                    id if id == ID_NO_FREE_INCOMING_CONNECTIONS => return Err(ConnectError::NoFreeSlots),
-                    id if id == ID_CONNECTION_ATTEMPT_FAILED    => return Err(ConnectError::Rejected),
+                    id if id == ID_CONNECTION_BANNED => return Err(ConnectError::Banned),
+                    id if id == ID_INVALID_PASSWORD => return Err(ConnectError::InvalidPassword),
+                    id if id == ID_NO_FREE_INCOMING_CONNECTIONS => {
+                        return Err(ConnectError::NoFreeSlots)
+                    }
+                    id if id == ID_CONNECTION_ATTEMPT_FAILED => return Err(ConnectError::Rejected),
                     _ => {}
                 }
             }
@@ -596,65 +729,92 @@ impl SampClient {
                 }
 
                 RPC_SERVER_JOIN => {
-                    let pid  = bs.read_uint16_le().ok()?;
+                    let pid = bs.read_uint16_le().ok()?;
                     bs.skip_bits(32); // unk
                     bs.read_uint8().ok()?; // isNPC
                     let nlen = bs.read_uint8().ok()? as usize;
                     let mut name_buf = vec![0u8; nlen];
-                    if nlen > 0 { bs.read_aligned_bytes(&mut name_buf).ok()?; }
+                    if nlen > 0 {
+                        bs.read_aligned_bytes(&mut name_buf).ok()?;
+                    }
                     let name = String::from_utf8_lossy(&name_buf).into_owned();
                     fire!(self.callbacks, on_player_join, pid, name);
                 }
 
                 RPC_SERVER_QUIT => {
-                    let pid    = bs.read_uint16_le().ok()?;
+                    let pid = bs.read_uint16_le().ok()?;
                     let reason = bs.read_uint8().ok()?;
                     fire!(self.callbacks, on_player_quit, pid, reason);
                 }
 
                 RPC_CHAT => {
-                    let pid  = bs.read_uint16_le().ok()?;
+                    let pid = bs.read_uint16_le().ok()?;
                     let tlen = bs.read_uint8().ok()? as usize;
                     let mut tbuf = vec![0u8; tlen];
-                    if tlen > 0 { bs.read_aligned_bytes(&mut tbuf).ok()?; }
+                    if tlen > 0 {
+                        bs.read_aligned_bytes(&mut tbuf).ok()?;
+                    }
                     fire!(self.callbacks, on_chat, pid, tbuf);
                 }
 
                 RPC_CLIENT_MESSAGE => {
                     let color = bs.read_uint32_le().ok()?;
-                    let mlen  = bs.read_uint32_le().ok()? as usize;
-                    if mlen > 256 { return None; }
+                    let mlen = bs.read_uint32_le().ok()? as usize;
+                    if mlen > 256 {
+                        return None;
+                    }
                     let mut mbuf = vec![0u8; mlen];
-                    if mlen > 0 { bs.read_aligned_bytes(&mut mbuf).ok()?; }
+                    if mlen > 0 {
+                        bs.read_aligned_bytes(&mut mbuf).ok()?;
+                    }
                     fire!(self.callbacks, on_client_message, color, mbuf);
                 }
 
                 RPC_DIALOG_BOX => {
-                    let did   = bs.read_uint16_le().ok()?;
+                    let did = bs.read_uint16_le().ok()?;
                     let style = bs.read_uint8().ok()?;
 
                     let tlen = bs.read_uint8().ok()? as usize;
                     let mut tbuf = vec![0u8; tlen];
-                    if tlen > 0 { bs.read_aligned_bytes(&mut tbuf).ok()?; }
+                    if tlen > 0 {
+                        bs.read_aligned_bytes(&mut tbuf).ok()?;
+                    }
                     let b1len = bs.read_uint8().ok()? as usize;
                     let mut b1buf = vec![0u8; b1len];
-                    if b1len > 0 { bs.read_aligned_bytes(&mut b1buf).ok()?; }
+                    if b1len > 0 {
+                        bs.read_aligned_bytes(&mut b1buf).ok()?;
+                    }
 
                     let b2len = bs.read_uint8().ok()? as usize;
                     let mut b2buf = vec![0u8; b2len];
-                    if b2len > 0 { bs.read_aligned_bytes(&mut b2buf).ok()?; }
+                    if b2len > 0 {
+                        bs.read_aligned_bytes(&mut b2buf).ok()?;
+                    }
 
                     let body = bs.read_compressed_bytes(4095).ok().unwrap_or_default();
-                    fire!(self.callbacks, on_dialog, did, style, tbuf, b1buf, b2buf, body);
+                    fire!(
+                        self.callbacks,
+                        on_dialog,
+                        did,
+                        style,
+                        tbuf,
+                        b1buf,
+                        b2buf,
+                        body
+                    );
                 }
 
                 RPC_GAME_TEXT => {
                     let gtype = bs.read_int32_le().ok()?;
-                    let time  = bs.read_int32_le().ok()?;
-                    let mlen  = bs.read_int32_le().ok()?;
-                    if !(0..=400).contains(&mlen) { return None; }
+                    let time = bs.read_int32_le().ok()?;
+                    let mlen = bs.read_int32_le().ok()?;
+                    if !(0..=400).contains(&mlen) {
+                        return None;
+                    }
                     let mut mbuf = vec![0u8; mlen as usize];
-                    if mlen > 0 { bs.read_aligned_bytes(&mut mbuf).ok()?; }
+                    if mlen > 0 {
+                        bs.read_aligned_bytes(&mut mbuf).ok()?;
+                    }
                     let text = String::from_utf8_lossy(&mbuf).into_owned();
                     fire!(self.callbacks, on_game_text, gtype, time, text);
                 }
@@ -677,9 +837,9 @@ impl SampClient {
                 }
 
                 RPC_SET_CHECKPOINT => {
-                    let x  = bs.read_float_le().ok()?;
-                    let y  = bs.read_float_le().ok()?;
-                    let z  = bs.read_float_le().ok()?;
+                    let x = bs.read_float_le().ok()?;
+                    let y = bs.read_float_le().ok()?;
+                    let z = bs.read_float_le().ok()?;
                     let sz = bs.read_float_le().ok()?;
                     fire!(self.callbacks, on_checkpoint, x, y, z, sz);
                 }
@@ -689,16 +849,28 @@ impl SampClient {
                 }
 
                 RPC_WORLD_PLAYER_ADD => {
-                    let pid   = bs.read_uint16_le().ok()?;
-                    let team  = bs.read_uint8().ok()?;
-                    let skin  = bs.read_int32_le().ok()?;
-                    let x     = bs.read_float_le().ok()?;
-                    let y     = bs.read_float_le().ok()?;
-                    let z     = bs.read_float_le().ok()?;
-                    let rot   = bs.read_float_le().ok()?;
+                    let pid = bs.read_uint16_le().ok()?;
+                    let team = bs.read_uint8().ok()?;
+                    let skin = bs.read_int32_le().ok()?;
+                    let x = bs.read_float_le().ok()?;
+                    let y = bs.read_float_le().ok()?;
+                    let z = bs.read_float_le().ok()?;
+                    let rot = bs.read_float_le().ok()?;
                     let color = bs.read_uint32_le().ok()?;
-                    let fs    = bs.read_uint8().ok()?;
-                    fire!(self.callbacks, on_player_streamed_in, pid, team, skin, x, y, z, rot, color, fs);
+                    let fs = bs.read_uint8().ok()?;
+                    fire!(
+                        self.callbacks,
+                        on_player_streamed_in,
+                        pid,
+                        team,
+                        skin,
+                        x,
+                        y,
+                        z,
+                        rot,
+                        color,
+                        fs
+                    );
                 }
 
                 RPC_WORLD_PLAYER_REMOVE => {
@@ -707,11 +879,13 @@ impl SampClient {
                 }
 
                 RPC_SET_PLAYER_NAME => {
-                    let pid  = bs.read_uint16_le().ok()?;
+                    let pid = bs.read_uint16_le().ok()?;
                     let nlen = bs.read_uint8().ok()? as usize;
                     let mut nbuf = vec![0u8; nlen];
-                    if nlen > 0 { bs.read_aligned_bytes(&mut nbuf).ok()?; }
-                    let name    = String::from_utf8_lossy(&nbuf).into_owned();
+                    if nlen > 0 {
+                        bs.read_aligned_bytes(&mut nbuf).ok()?;
+                    }
+                    let name = String::from_utf8_lossy(&nbuf).into_owned();
                     let success = bs.read_uint8().ok()?;
                     fire!(self.callbacks, on_player_name, pid, name, success);
                 }
@@ -722,7 +896,7 @@ impl SampClient {
                 }
 
                 RPC_SET_PLAYER_TIME => {
-                    let hour   = bs.read_uint8().ok()?;
+                    let hour = bs.read_uint8().ok()?;
                     let minute = bs.read_uint8().ok()?;
                     fire!(self.callbacks, on_player_time, hour, minute);
                 }
@@ -743,27 +917,42 @@ impl SampClient {
                     let team = bs.read_uint8().ok()?;
                     let skin = bs.read_uint32_le().ok()?;
                     bs.read_uint8().ok()?; // unused
-                    let x   = bs.read_float_le().ok()?;
-                    let y   = bs.read_float_le().ok()?;
-                    let z   = bs.read_float_le().ok()?;
+                    let x = bs.read_float_le().ok()?;
+                    let y = bs.read_float_le().ok()?;
+                    let z = bs.read_float_le().ok()?;
                     let rot = bs.read_float_le().ok()?;
-                    let w1  = bs.read_uint32_le().ok()?;
-                    let w2  = bs.read_uint32_le().ok()?;
-                    let w3  = bs.read_uint32_le().ok()?;
-                    let a1  = bs.read_uint32_le().ok()?;
-                    let a2  = bs.read_uint32_le().ok()?;
-                    let a3  = bs.read_uint32_le().ok()?;
-                    fire!(self.callbacks, on_spawn_info, team, skin, x, y, z, rot, w1, w2, w3, a1, a2, a3);
+                    let w1 = bs.read_uint32_le().ok()?;
+                    let w2 = bs.read_uint32_le().ok()?;
+                    let w3 = bs.read_uint32_le().ok()?;
+                    let a1 = bs.read_uint32_le().ok()?;
+                    let a2 = bs.read_uint32_le().ok()?;
+                    let a3 = bs.read_uint32_le().ok()?;
+                    fire!(
+                        self.callbacks,
+                        on_spawn_info,
+                        team,
+                        skin,
+                        x,
+                        y,
+                        z,
+                        rot,
+                        w1,
+                        w2,
+                        w3,
+                        a1,
+                        a2,
+                        a3
+                    );
                 }
 
                 RPC_SET_PLAYER_TEAM => {
-                    let pid  = bs.read_uint16_le().ok()?;
+                    let pid = bs.read_uint16_le().ok()?;
                     let team = bs.read_uint8().ok()?;
                     fire!(self.callbacks, on_player_team, pid, team);
                 }
 
                 RPC_PUT_IN_VEHICLE => {
-                    let vid  = bs.read_uint16_le().ok()?;
+                    let vid = bs.read_uint16_le().ok()?;
                     let seat = bs.read_uint8().ok()?;
                     fire!(self.callbacks, on_put_in_vehicle, vid, seat);
                 }
@@ -773,7 +962,7 @@ impl SampClient {
                 }
 
                 RPC_SET_PLAYER_COLOR => {
-                    let pid   = bs.read_uint16_le().ok()?;
+                    let pid = bs.read_uint16_le().ok()?;
                     let color = bs.read_uint32_le().ok()?;
                     fire!(self.callbacks, on_player_color, pid, color);
                 }
@@ -801,7 +990,7 @@ impl SampClient {
                 }
 
                 RPC_SET_WEAPON_AMMO => {
-                    let wid  = bs.read_uint8().ok()?;
+                    let wid = bs.read_uint8().ok()?;
                     let ammo = bs.read_uint16_le().ok()?;
                     fire!(self.callbacks, on_weapon_ammo, wid, ammo);
                 }
@@ -817,7 +1006,7 @@ impl SampClient {
                 }
 
                 RPC_SET_PLAYER_SKIN => {
-                    let pid  = bs.read_int32_le().ok()?;
+                    let pid = bs.read_int32_le().ok()?;
                     let skin = bs.read_uint32_le().ok()?;
                     fire!(self.callbacks, on_player_skin, pid, skin);
                 }
@@ -828,32 +1017,49 @@ impl SampClient {
                 }
 
                 RPC_WORLD_VEHICLE_ADD => {
-                    let vid      = bs.read_uint16_le().ok()?;
-                    let model    = bs.read_int32_le().ok()?;
-                    let x        = bs.read_float_le().ok()?;
-                    let y        = bs.read_float_le().ok()?;
-                    let z        = bs.read_float_le().ok()?;
-                    let angle    = bs.read_float_le().ok()?;
-                    let color1   = bs.read_uint8().ok()?;
-                    let color2   = bs.read_uint8().ok()?;
-                    let health   = bs.read_float_le().ok()?;
+                    let vid = bs.read_uint16_le().ok()?;
+                    let model = bs.read_int32_le().ok()?;
+                    let x = bs.read_float_le().ok()?;
+                    let y = bs.read_float_le().ok()?;
+                    let z = bs.read_float_le().ok()?;
+                    let angle = bs.read_float_le().ok()?;
+                    let color1 = bs.read_uint8().ok()?;
+                    let color2 = bs.read_uint8().ok()?;
+                    let health = bs.read_float_le().ok()?;
                     let interior = bs.read_uint8().ok()?;
-                    let door_dmg  = bs.read_uint32_le().ok()?;
+                    let door_dmg = bs.read_uint32_le().ok()?;
                     let panel_dmg = bs.read_uint32_le().ok()?;
                     let light_dmg = bs.read_uint8().ok()?;
-                    let tire_dmg  = bs.read_uint8().ok()?;
+                    let tire_dmg = bs.read_uint8().ok()?;
                     let add_siren = bs.read_uint8().ok()?;
                     let mut mods = [0u8; 14];
                     bs.read_aligned_bytes(&mut mods).ok()?;
-                    let paintjob    = bs.read_uint8().ok()?;
+                    let paintjob = bs.read_uint8().ok()?;
                     let body_color1 = bs.read_uint32_le().ok()?;
                     let body_color2 = bs.read_uint32_le().ok()?;
                     // u8 unk ignored
-                    fire!(self.callbacks, on_vehicle_streamed_in,
-                          vid, model, x, y, z, angle,
-                          color1, color2, health, interior,
-                          door_dmg, panel_dmg, light_dmg, tire_dmg,
-                          add_siren, paintjob, body_color1, body_color2);
+                    fire!(
+                        self.callbacks,
+                        on_vehicle_streamed_in,
+                        vid,
+                        model,
+                        x,
+                        y,
+                        z,
+                        angle,
+                        color1,
+                        color2,
+                        health,
+                        interior,
+                        door_dmg,
+                        panel_dmg,
+                        light_dmg,
+                        tire_dmg,
+                        add_siren,
+                        paintjob,
+                        body_color1,
+                        body_color2
+                    );
                 }
 
                 RPC_WORLD_VEHICLE_REMOVE => {
@@ -867,36 +1073,61 @@ impl SampClient {
                 }
 
                 RPC_TEXTDRAW_SHOW => {
-                    let tid    = bs.read_uint16_le().ok()?;
-                    let flags  = bs.read_uint8().ok()?;
-                    let lw     = bs.read_float_le().ok()?;
-                    let lh     = bs.read_float_le().ok()?;
-                    let lcol   = bs.read_uint32_le().ok()?;
-                    let linew  = bs.read_float_le().ok()?;
-                    let lineh  = bs.read_float_le().ok()?;
-                    let bcol   = bs.read_uint32_le().ok()?;
+                    let tid = bs.read_uint16_le().ok()?;
+                    let flags = bs.read_uint8().ok()?;
+                    let lw = bs.read_float_le().ok()?;
+                    let lh = bs.read_float_le().ok()?;
+                    let lcol = bs.read_uint32_le().ok()?;
+                    let linew = bs.read_float_le().ok()?;
+                    let lineh = bs.read_float_le().ok()?;
+                    let bcol = bs.read_uint32_le().ok()?;
                     let shadow = bs.read_uint8().ok()?;
-                    let outline= bs.read_uint8().ok()?;
-                    let bgcol  = bs.read_uint32_le().ok()?;
-                    let style  = bs.read_uint8().ok()?;
-                    let sel    = bs.read_uint8().ok()?;
-                    let x      = bs.read_float_le().ok()?;
-                    let y      = bs.read_float_le().ok()?;
-                    let model  = bs.read_uint16_le().ok()?;
-                    let rx     = bs.read_float_le().ok()?;
-                    let ry     = bs.read_float_le().ok()?;
-                    let rz     = bs.read_float_le().ok()?;
-                    let zoom   = bs.read_float_le().ok()?;
-                    let col1   = bs.read_int16_le().ok()?;
-                    let col2   = bs.read_int16_le().ok()?;
-                    let tlen   = bs.read_uint16_le().ok()? as usize;
+                    let outline = bs.read_uint8().ok()?;
+                    let bgcol = bs.read_uint32_le().ok()?;
+                    let style = bs.read_uint8().ok()?;
+                    let sel = bs.read_uint8().ok()?;
+                    let x = bs.read_float_le().ok()?;
+                    let y = bs.read_float_le().ok()?;
+                    let model = bs.read_uint16_le().ok()?;
+                    let rx = bs.read_float_le().ok()?;
+                    let ry = bs.read_float_le().ok()?;
+                    let rz = bs.read_float_le().ok()?;
+                    let zoom = bs.read_float_le().ok()?;
+                    let col1 = bs.read_int16_le().ok()?;
+                    let col2 = bs.read_int16_le().ok()?;
+                    let tlen = bs.read_uint16_le().ok()? as usize;
                     let mut tbuf = vec![0u8; tlen];
-                    if tlen > 0 { bs.read_aligned_bytes(&mut tbuf).ok()?; }
+                    if tlen > 0 {
+                        bs.read_aligned_bytes(&mut tbuf).ok()?;
+                    }
                     let text = String::from_utf8_lossy(&tbuf).into_owned();
-                    fire!(self.callbacks, on_textdraw_show,
-                          tid, flags, lw, lh, lcol, linew, lineh, bcol,
-                          shadow, outline, bgcol, style, sel, x, y, model,
-                          rx, ry, rz, zoom, col1, col2, text);
+                    fire!(
+                        self.callbacks,
+                        on_textdraw_show,
+                        tid,
+                        flags,
+                        lw,
+                        lh,
+                        lcol,
+                        linew,
+                        lineh,
+                        bcol,
+                        shadow,
+                        outline,
+                        bgcol,
+                        style,
+                        sel,
+                        x,
+                        y,
+                        model,
+                        rx,
+                        ry,
+                        rz,
+                        zoom,
+                        col1,
+                        col2,
+                        text
+                    );
                 }
 
                 RPC_TEXTDRAW_HIDE => {
@@ -905,17 +1136,19 @@ impl SampClient {
                 }
 
                 RPC_TEXTDRAW_EDIT => {
-                    let tid  = bs.read_uint16_le().ok()?;
+                    let tid = bs.read_uint16_le().ok()?;
                     let tlen = bs.read_uint16_le().ok()? as usize;
                     let mut tbuf = vec![0u8; tlen];
-                    if tlen > 0 { bs.read_aligned_bytes(&mut tbuf).ok()?; }
+                    if tlen > 0 {
+                        bs.read_aligned_bytes(&mut tbuf).ok()?;
+                    }
                     let text = String::from_utf8_lossy(&tbuf).into_owned();
                     fire!(self.callbacks, on_textdraw_edit, tid, text);
                 }
 
                 RPC_TEXTDRAW_TOGGLE_SELECT => {
                     let enable = bs.read_uint8().ok()? != 0;
-                    let color  = bs.read_uint32_le().ok()?;
+                    let color = bs.read_uint32_le().ok()?;
                     fire!(self.callbacks, on_textdraw_toggle_select, enable, color);
                 }
 
@@ -930,26 +1163,41 @@ impl SampClient {
     }
 
     fn process_packet_data(&self, data: &[u8]) {
-        if data.is_empty() { return; }
+        if data.is_empty() {
+            return;
+        }
         match data[0] {
             id if id == ID_TIMESTAMP => {
-                if data.len() < 6 { return; }
+                if data.len() < 6 {
+                    return;
+                }
                 self.process_packet_data(&data[5..]);
             }
             id if id == ID_RPC => {
-                if data.len() < 2 { return; }
+                if data.len() < 2 {
+                    return;
+                }
                 let mut bs = BitStream::from_bytes(data);
                 bs.skip_bits(8); // ID_RPC
-                let rpc_id = match bs.read_uint8() { Ok(v) => v, Err(_) => return };
-                let bit_len = match bs.read_compressed_uint32() { Ok(v) => v, Err(_) => return };
+                let rpc_id = match bs.read_uint8() {
+                    Ok(v) => v,
+                    Err(_) => return,
+                };
+                let bit_len = match bs.read_compressed_uint32() {
+                    Ok(v) => v,
+                    Err(_) => return,
+                };
                 let byte_len = (bit_len as usize).div_ceil(8);
                 let mut payload = vec![0u8; byte_len];
-                if byte_len > 0
-                    && bs.read_bits(&mut payload, bit_len as i32, false).is_err() { return; }
+                if byte_len > 0 && bs.read_bits(&mut payload, bit_len as i32, false).is_err() {
+                    return;
+                }
                 self.handle_rpc(rpc_id, &payload);
             }
             id if id == ID_INTERNAL_PING => {
-                if data.len() < 5 { return; }
+                if data.len() < 5 {
+                    return;
+                }
                 let ts = u32::from_le_bytes(data[1..5].try_into().unwrap());
                 let mut resp = BitStream::new();
                 resp.write_uint8(ID_CONNECTED_PONG);
@@ -1006,11 +1254,9 @@ impl SampClient {
     // ─── Public API ───────────────────────────────────────────────────────────
 
     pub fn connect(&self, timeout_sec: f64) -> Result<(), ConnectError> {
-        let server_v4 = resolve_host(&self.host, self.port)
-            .ok_or(ConnectError::HostResolution)?;
+        let server_v4 = resolve_host(&self.host, self.port).ok_or(ConnectError::HostResolution)?;
 
-        let sock = UdpSocket::bind("0.0.0.0:0")
-            .map_err(ConnectError::SocketBind)?;
+        let sock = UdpSocket::bind("0.0.0.0:0").map_err(ConnectError::SocketBind)?;
 
         // If a SOCKS5 proxy is configured, negotiate UDP ASSOCIATE now.
         let (relay_addr, tcp_ctrl) = match self.proxy.as_ref() {
@@ -1024,10 +1270,10 @@ impl SampClient {
         {
             let mut guard = self.net.lock().unwrap();
             *guard = Some(NetState {
-                sock:        Arc::new(sock),
+                sock: Arc::new(sock),
                 server_addr: SocketAddr::from((server_v4, self.port)),
                 relay_addr,
-                _tcp_ctrl:   tcp_ctrl,
+                _tcp_ctrl: tcp_ctrl,
             });
         }
 
@@ -1042,14 +1288,14 @@ impl SampClient {
 
         let (sock, server_v4, relay_v4) = match self.net_recv_params() {
             Some(p) => p,
-            None    => return,
+            None => return,
         };
 
-        let mut split_buf       = SplitBuffer::new();
-        let mut last_keepalive  = Instant::now();
-        let mut last_ack_flush  = Instant::now();
-        let mut last_scores     = Instant::now();
-        let mut recv_buf        = [0u8; 2048];
+        let mut split_buf = SplitBuffer::new();
+        let mut last_keepalive = Instant::now();
+        let mut last_ack_flush = Instant::now();
+        let mut last_scores = Instant::now();
+        let mut recv_buf = [0u8; 2048];
 
         while self.running.load(Ordering::Relaxed) {
             let now = Instant::now();
@@ -1075,7 +1321,7 @@ impl SampClient {
             let _ = sock.set_read_timeout(Some(Duration::from_millis(30)));
             let n = match recv_one(&sock, &mut recv_buf, server_v4, relay_v4) {
                 Some(n) => n,
-                None    => continue,
+                None => continue,
             };
 
             let data = &recv_buf[..n];
@@ -1090,11 +1336,16 @@ impl SampClient {
                 Some(r) => r,
                 None => continue,
             };
-            if result.is_ack { continue; }
+            if result.is_ack {
+                continue;
+            }
 
             for pkt in &result.packets {
+                // ACK all three reliable types — mirrors ReliabilityLayer.cpp:455:
+                // "if RELIABLE_SEQUENCED || RELIABLE_ORDERED || RELIABLE"
                 if pkt.reliability == crate::reliability::Reliability::Reliable
                     || pkt.reliability == crate::reliability::Reliability::ReliableOrdered
+                    || pkt.reliability == crate::reliability::Reliability::ReliableSequenced
                 {
                     self.pending_acks.lock().unwrap().push(pkt.msg_num);
                 }
@@ -1202,9 +1453,17 @@ fn resolve_host(host: &str, port: u16) -> Option<Ipv4Addr> {
 ///
 /// Returns the payload length, or `None` if the datagram should be discarded
 /// (wrong source, malformed header, or a transient recv error).
-fn recv_one(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, relay_v4: Option<Ipv4Addr>) -> Option<usize> {
+fn recv_one(
+    sock: &UdpSocket,
+    buf: &mut [u8],
+    server_v4: Ipv4Addr,
+    relay_v4: Option<Ipv4Addr>,
+) -> Option<usize> {
     let (n, src) = sock.recv_from(buf).ok()?;
-    let src_v4 = match src.ip() { IpAddr::V4(v) => v, _ => return None };
+    let src_v4 = match src.ip() {
+        IpAddr::V4(v) => v,
+        _ => return None,
+    };
 
     match relay_v4 {
         Some(_relay) => {
@@ -1212,27 +1471,55 @@ fn recv_one(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, relay_v4: Opt
             // than the one advertised in the UDP ASSOCIATE reply.  The embedded
             // SOCKS5 header is the authoritative source-address check.
             let (origin, hdr_len) = socks5::unwrap_packet(&buf[..n])?;
-            if origin != server_v4 { return None; }
+            if origin != server_v4 {
+                return None;
+            }
             buf.copy_within(hdr_len..n, 0);
             Some(n - hdr_len)
         }
         None => {
-            if src_v4 == server_v4 { Some(n) } else { None }
+            if src_v4 == server_v4 {
+                Some(n)
+            } else {
+                None
+            }
         }
     }
 }
 
 /// Receive a datagram from `server_v4` before `deadline`.
 /// Returns None only if deadline is reached without a matching packet.
-fn recv_deadline(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, deadline: Instant, relay_v4: Option<Ipv4Addr>) -> Option<usize> {
-    recv_deadline_cap(sock, buf, server_v4, deadline, Duration::from_secs(1), relay_v4)
+fn recv_deadline(
+    sock: &UdpSocket,
+    buf: &mut [u8],
+    server_v4: Ipv4Addr,
+    deadline: Instant,
+    relay_v4: Option<Ipv4Addr>,
+) -> Option<usize> {
+    recv_deadline_cap(
+        sock,
+        buf,
+        server_v4,
+        deadline,
+        Duration::from_secs(1),
+        relay_v4,
+    )
 }
 
 /// Like recv_deadline but caps each poll to `cap`.
-fn recv_deadline_cap(sock: &UdpSocket, buf: &mut [u8], server_v4: Ipv4Addr, deadline: Instant, cap: Duration, relay_v4: Option<Ipv4Addr>) -> Option<usize> {
+fn recv_deadline_cap(
+    sock: &UdpSocket,
+    buf: &mut [u8],
+    server_v4: Ipv4Addr,
+    deadline: Instant,
+    cap: Duration,
+    relay_v4: Option<Ipv4Addr>,
+) -> Option<usize> {
     loop {
         let now = Instant::now();
-        if now >= deadline { return None; }
+        if now >= deadline {
+            return None;
+        }
         let remaining = deadline - now;
         let poll = remaining.min(cap).max(Duration::from_millis(1));
         let _ = sock.set_read_timeout(Some(poll));
@@ -1257,7 +1544,11 @@ mod tests {
         let c = make_client();
         let pkt = c.build_keepalive_pkt();
         // lrAnalog at bytes 1-2, udAnalog at 3-4, wKeys at 5-6
-        assert_eq!(&pkt[1..7], &[0, 0, 0, 0, 0, 0], "keys/analog should default to zero");
+        assert_eq!(
+            &pkt[1..7],
+            &[0, 0, 0, 0, 0, 0],
+            "keys/analog should default to zero"
+        );
     }
 
     #[test]
@@ -1266,9 +1557,21 @@ mod tests {
         // Keys::FIRE | Keys::SPRINT = 4 | 8 = 12
         c.set_keys(12, 100, 200);
         let pkt = c.build_keepalive_pkt();
-        assert_eq!(u16::from_le_bytes(pkt[1..3].try_into().unwrap()), 100, "lr_analog");
-        assert_eq!(u16::from_le_bytes(pkt[3..5].try_into().unwrap()), 200, "ud_analog");
-        assert_eq!(u16::from_le_bytes(pkt[5..7].try_into().unwrap()), 12,  "wKeys");
+        assert_eq!(
+            u16::from_le_bytes(pkt[1..3].try_into().unwrap()),
+            100,
+            "lr_analog"
+        );
+        assert_eq!(
+            u16::from_le_bytes(pkt[3..5].try_into().unwrap()),
+            200,
+            "ud_analog"
+        );
+        assert_eq!(
+            u16::from_le_bytes(pkt[5..7].try_into().unwrap()),
+            12,
+            "wKeys"
+        );
     }
 
     #[test]
@@ -1288,18 +1591,22 @@ mod tests {
         c.set_keys(0xFFFF, 0xFFFF, 0xFFFF);
         let pkt = c.build_keepalive_pkt();
         // vecPos starts at pkt[7]; x and y (8 bytes) should still be zero
-        assert_eq!(&pkt[7..15], &[0u8; 8], "0xFFFF keys must not bleed into vecPos");
+        assert_eq!(
+            &pkt[7..15],
+            &[0u8; 8],
+            "0xFFFF keys must not bleed into vecPos"
+        );
     }
 
     #[test]
     fn test_keepalive_pkt_constants() {
         let c = make_client();
         let pkt = c.build_keepalive_pkt();
-        assert_eq!(pkt[0], ID_PLAYER_SYNC,                           "packet ID");
-        assert_eq!(&pkt[15..19], &3.0f32.to_le_bytes(),              "vecPos.z = 3.0");
-        assert_eq!(&pkt[31..35], &1.0f32.to_le_bytes(),              "quaternion.w = 1.0");
-        assert_eq!(pkt[35], 100,                                      "byteHealth = 100");
-        assert_eq!([pkt[63], pkt[64]], [0xFF, 0xFF],                  "wSurfInfo = 0xFFFF");
+        assert_eq!(pkt[0], ID_PLAYER_SYNC, "packet ID");
+        assert_eq!(&pkt[15..19], &3.0f32.to_le_bytes(), "vecPos.z = 3.0");
+        assert_eq!(&pkt[31..35], &1.0f32.to_le_bytes(), "quaternion.w = 1.0");
+        assert_eq!(pkt[35], 100, "byteHealth = 100");
+        assert_eq!([pkt[63], pkt[64]], [0xFF, 0xFF], "wSurfInfo = 0xFFFF");
     }
 
     #[test]

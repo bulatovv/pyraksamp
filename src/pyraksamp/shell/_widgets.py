@@ -14,7 +14,6 @@ from textual.widgets import (
     DataTable,
     Input,
     Label,
-    ListItem,
     ListView,
     Static,
 )
@@ -91,8 +90,8 @@ class _DialogButton(Static):
         text-style: none;
     }
     _DialogButton.disabled {
-        color: ansi_bright_black;
-        text-style: none;
+        color: ansi_white;
+        text-style: dim;
     }
     """
 
@@ -474,9 +473,9 @@ class DialogWidget(Vertical):
                 for row in dlg.rows:
                     for i, col in enumerate(row.columns):
                         col_widths[i] = max(col_widths[i], len(_strip_colors(col)))
-                hdr.update("".join(
-                    f" {h:<{w}} " for h, w in zip(headers_plain, col_widths)
-                ))
+                hdr.update(
+                    "".join(f" {h:<{w}} " for h, w in zip(headers_plain, col_widths))
+                )
                 for i in range(len(dlg.headers)):
                     dt.add_column("", key=f"col{i}")
                 for row in dlg.rows:
@@ -524,8 +523,17 @@ class DialogWidget(Vertical):
     @on(DataTable.RowSelected)
     async def _on_table_selected(self, event: DataTable.RowSelected) -> None:
         event.stop()
-        if self._btn1 and not self._dialog.is_responded:
-            await self._on_button_pressed(_DialogButton.Pressed(self._btn1))
+        if self._dialog.is_responded:
+            return
+        dlg = self._dialog
+        if not isinstance(dlg, (ListDialog, TablistDialog, TablistHeadersDialog)):
+            return
+        selected_idx = 0
+        if isinstance(self._list_widget, DataTable):
+            crow = self._list_widget.cursor_row
+            selected_idx = crow if crow is not None else 0
+        dlg.rows[selected_idx].select()
+        self._mark_responded(return_focus=True)
 
     @on(_DialogButton.Pressed)
     async def _on_button_pressed(self, event: _DialogButton.Pressed) -> None:
@@ -852,9 +860,9 @@ class TextdrawMenu(Static):
     def __init__(self, bot) -> None:
         super().__init__("")
         self._bot = bot
-        self._items: list = []          # all TextDraw objects, selectable-first
-        self._sel_count: int = 0        # how many leading items are selectable
-        self._cursor: int = 0           # index among selectable items only
+        self._items: list = []  # all TextDraw objects, selectable-first
+        self._sel_count: int = 0  # how many leading items are selectable
+        self._cursor: int = 0  # index among selectable items only
         self._watch_task: asyncio.Task | None = None
 
     async def on_mount(self) -> None:

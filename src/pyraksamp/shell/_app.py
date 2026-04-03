@@ -181,7 +181,9 @@ class SampShellApp(App):
 
     # ── Public helpers for commands ────────────────────────────────────────────
 
-    def set_hint(self, text: str, *, dim: bool = False, dim_yellow: bool = False) -> None:
+    def set_hint(
+        self, text: str, *, dim: bool = False, dim_yellow: bool = False
+    ) -> None:
         """Update the input hint label."""
         if text and dim_yellow:
             self._input_hint.update(f"[ansi_yellow]{text}[/]")
@@ -273,7 +275,7 @@ class SampShellApp(App):
                     await self._event_log.append_line(
                         "Disconnected from server.", style="error"
                     )
-                    pass
+                    self._input_hint.update("[ansi_red]Disconnected[/]")
                     break
                 try:
                     await self._route(tag, event)
@@ -354,7 +356,6 @@ class SampShellApp(App):
                 self.set_hint("Press Tab to navigate to dialog")
             asyncio.ensure_future(self._watch_dialog_response(dlg, group))
 
-
     # ── Chat input handler ─────────────────────────────────────────────────────
 
     @on(ChatInput.ModeChanged)
@@ -399,7 +400,9 @@ class SampShellApp(App):
                     continue
                 cmd = self._commands.get(name)
                 label = f"{name} {cmd.metavar}".rstrip() if cmd.metavar else name
-                items.append(CompletionItem(insert=name, label=label, description=cmd.help))
+                items.append(
+                    CompletionItem(insert=name, label=label, description=cmd.help)
+                )
         else:  # samp_mode
             full_prefix = f"/{prefix}" if not prefix.startswith("/") else prefix
             items = [
