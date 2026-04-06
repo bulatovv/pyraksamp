@@ -1,3 +1,3 @@
 # Shell
 
-::: pyraksamp.shell.Shell
+::: pyraksamp.shell
