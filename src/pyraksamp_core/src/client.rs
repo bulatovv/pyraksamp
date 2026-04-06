@@ -1,7 +1,7 @@
 //! SA:MP 0.3.7 pure-Rust client — port of client.cpp.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{fmt, io};
@@ -76,6 +76,8 @@ const RPC_DEATH_BROADCAST: u8 = 166;
 
 // Client→server: acknowledge interior change (SAMPRPC.cpp: RPC_SetInteriorId = 118)
 const RPC_INTERIOR_CHANGE_NOTIFY: u8 = 118;
+const RPC_SET_PLAYER_FACING_ANGLE: u8 = 19;
+const ID_AIM_SYNC: u8 = 203;
 
 const RPC_CLIENT_JOIN: u8 = 25;
 const RPC_REQUEST_CLASS: u8 = 128;
@@ -87,6 +89,14 @@ const RPC_ENTER_VEHICLE: u8 = 26;
 const RPC_EXIT_VEHICLE: u8 = 154;
 const RPC_SERVER_COMMAND: u8 = 50;
 const RPC_UPDATE_SCORES: u8 = 155;
+
+// TextDraw RPCs
+const RPC_CLIENT_CHECK: u8 = 103;
+const RPC_FORCE_CLASS_SELECTION: u8 = 74;
+const RPC_GAME_MODE_RESTART: u8 = 40;
+
+const ID_WEAPONS_UPDATE: u8 = 204;
+const ID_STATS_UPDATE: u8 = 205;
 
 // TextDraw RPCs
 const RPC_TEXTDRAW_SHOW: u8 = 134;
@@ -355,6 +365,12 @@ pub struct SampClient {
     keys: AtomicU16,
     lr_analog: AtomicU16,
     ud_analog: AtomicU16,
+    health: AtomicU8,
+    armour: AtomicU8,
+    weapon: AtomicU8,
+    // facing angle in degrees, stored as f32 bits (fQuaternion[3] in ONFOOT_SYNC_DATA)
+    rotation_raw: AtomicU32,
+    onfoot_rate_ms: AtomicU32, // server-specified send interval for on-foot sync
 
     // Protected state
     player_id: Mutex<i32>,
@@ -399,6 +415,11 @@ impl SampClient {
             keys: AtomicU16::new(0),
             lr_analog: AtomicU16::new(0),
             ud_analog: AtomicU16::new(0),
+            health: AtomicU8::new(100),
+            armour: AtomicU8::new(0),
+            weapon: AtomicU8::new(0),
+            rotation_raw: AtomicU32::new(0),
+            onfoot_rate_ms: AtomicU32::new(40),
             player_id: Mutex::new(-1),
             challenge: Mutex::new(0),
             pending_acks: Mutex::new(Vec::new()),
@@ -624,6 +645,9 @@ impl SampClient {
         bs.write_aligned_bytes(gpci.as_bytes());
         bs.write_uint8(ver.len() as u8);
         bs.write_aligned_bytes(ver.as_bytes());
+        // Official SA:MP 0.3.7 client sends challenge_resp a second time at the end.
+        // Servers can detect bots by checking this duplicate is non-zero.
+        bs.write_uint32_le(challenge_resp);
 
         let payload = bs.as_bytes().to_vec();
         let mut rpc_bs = BitStream::new();
@@ -719,6 +743,39 @@ impl SampClient {
         let _ = (|| -> Option<()> {
             match rpc_id {
                 RPC_INIT_GAME => {
+                    // Parse INIT_GAME payload (netrpc.cpp: InitGame, RPCs.cpp: InitGameForPlayer).
+                    // RakSAMP BitStream.ReadBits does NOT byte-align before reading —
+                    // all fields are packed bit-consecutively (confirmed from BitStream.cpp).
+                    // Bit positions:
+                    //   bits   0-3:   4 booleans (zoneNames, useCJWalk, allowWeapons, limitGlobalChatRadius)
+                    //   bits   4-35:  f32 globalChatRadius
+                    //   bit    36:    bool stuntBonus
+                    //   bits   37-68: f32 nameTagDrawDistance
+                    //   bits   69-71: 3 booleans (disableEnterExits, nameTagLOS, manualVehicleEngineAndLight)
+                    //   bits   72-103: i32 iSpawnsAvailable
+                    //   bits  104-119: u16 MyPlayerID
+                    //   bit   120:    bool showPlayerTags
+                    //   bits  121-152: i32 showPlayerMarkers
+                    //   bits  153-160: u8 worldTime
+                    //   bits  161-168: u8 weather
+                    //   bits  169-200: f32 gravity
+                    //   bit   201:    bool lanMode
+                    //   bits  202-233: i32 deathDropMoney
+                    //   bit   234:    bool instagib
+                    //   bits  235-266: i32 onFootRate  ← send rate
+                    //   bits  267-298: i32 inCarRate
+                    bs.skip_bits(104);
+                    if let Ok(pid) = bs.read_uint16_le() {
+                        *self.player_id.lock().unwrap() = pid as i32;
+                    }
+                    // skip from bit 120 to bit 235 (115 bits)
+                    bs.skip_bits(115);
+                    if let (Ok(onfoot_ms), Ok(_incar_ms)) = (bs.read_int32_le(), bs.read_int32_le())
+                    {
+                        let rate = onfoot_ms.clamp(30, 2000) as u32;
+                        self.onfoot_rate_ms.store(rate, Ordering::Relaxed);
+                    }
+
                     fire!(self.callbacks, on_connect);
                     // Request class 0; spawn is deferred until server replies (RPC_REQUEST_CLASS).
                     let class_id: i32 = 0;
@@ -727,9 +784,22 @@ impl SampClient {
 
                 RPC_REQUEST_CLASS => {
                     // Server approved class selection (u8 outcome + PLAYER_SPAWN_INFO).
+                    // PLAYER_SPAWN_INFO (#pragma pack(1)):
+                    //   byteTeam(1) + iSkin(4) + unk(1) + vecPos(12) + fRotation(4) + ...
+                    let outcome = bs.read_uint8().ok()?;
+                    if outcome != 0 {
+                        // Skip byteTeam(1)+iSkin(4)+unk(1) = 6 bytes, then read vecPos + fRotation.
+                        bs.skip_bits(6 * 8);
+                        let x = bs.read_float_le().ok()?;
+                        let y = bs.read_float_le().ok()?;
+                        let z = bs.read_float_le().ok()?;
+                        *self.position.lock().unwrap() = [x, y, z];
+                        if let Ok(rot) = bs.read_float_le() {
+                            self.rotation_raw.store(rot.to_bits(), Ordering::Relaxed);
+                        }
+                    }
                     // Skip spawn if the server put us in spectating mode — it will
                     // call TogglePlayerSpectating(false) when ready for us to spawn.
-                    let _outcome = bs.read_uint8().ok()?;
                     if !self.spectating.load(Ordering::Relaxed) {
                         self.send_rpc(RPC_REQUEST_SPAWN, &[], REL_RELIABLE);
                         self.send_rpc(RPC_SPAWN, &[], REL_RELIABLE);
@@ -834,11 +904,15 @@ impl SampClient {
 
                 RPC_SET_HEALTH => {
                     let hp = bs.read_float_le().ok()?;
+                    self.health
+                        .store(hp.clamp(0.0, 255.0) as u8, Ordering::Relaxed);
                     fire!(self.callbacks, on_set_health, hp);
                 }
 
                 RPC_SET_ARMOUR => {
                     let arm = bs.read_float_le().ok()?;
+                    self.armour
+                        .store(arm.clamp(0.0, 255.0) as u8, Ordering::Relaxed);
                     fire!(self.callbacks, on_set_armour, arm);
                 }
 
@@ -872,6 +946,11 @@ impl SampClient {
                     let rot = bs.read_float_le().ok()?;
                     let color = bs.read_uint32_le().ok()?;
                     let fs = bs.read_uint8().ok()?;
+                    // Server broadcasts our own spawn position — update sync state.
+                    if pid == *self.player_id.lock().unwrap() as u16 {
+                        *self.position.lock().unwrap() = [x, y, z];
+                        self.rotation_raw.store(rot.to_bits(), Ordering::Relaxed);
+                    }
                     fire!(
                         self.callbacks,
                         on_player_streamed_in,
@@ -909,6 +988,12 @@ impl SampClient {
                     fire!(self.callbacks, on_toggle_controllable, moveable);
                 }
 
+                RPC_SET_PLAYER_FACING_ANGLE => {
+                    // fRotation stored in fQuaternion[3] of on-foot sync (misc_funcs.cpp:40)
+                    let rot = bs.read_float_le().ok()?;
+                    self.rotation_raw.store(rot.to_bits(), Ordering::Relaxed);
+                }
+
                 RPC_SET_PLAYER_TIME => {
                     let hour = bs.read_uint8().ok()?;
                     let minute = bs.read_uint8().ok()?;
@@ -924,6 +1009,7 @@ impl SampClient {
 
                 RPC_SET_ARMED_WEAPON => {
                     let wid = bs.read_uint32_le().ok()?;
+                    self.weapon.store(wid as u8, Ordering::Relaxed);
                     fire!(self.callbacks, on_set_armed_weapon, wid);
                 }
 
@@ -1178,6 +1264,33 @@ impl SampClient {
                     fire!(self.callbacks, on_textdraw_toggle_select, enable, color);
                 }
 
+                RPC_CLIENT_CHECK => {
+                    // Anti-cheat memory check. Server sends type+address+offset+count;
+                    // client must respond with same RPC: type+address+response(0).
+                    let check_type = bs.read_uint8().ok()?;
+                    let address = bs.read_uint32_le().ok()?;
+                    // offset and count are informational — we always respond with 0
+                    let mut resp = [0u8; 6];
+                    resp[0] = check_type;
+                    resp[1..5].copy_from_slice(&address.to_le_bytes());
+                    resp[5] = 0; // response byte
+                    self.send_rpc(RPC_CLIENT_CHECK, &resp, REL_RELIABLE);
+                }
+
+                RPC_FORCE_CLASS_SELECTION => {
+                    // Server wants us back at class selection — reset spawn state and re-request.
+                    self.spawned.store(false, Ordering::Relaxed);
+                    let class_id: i32 = 0;
+                    self.send_rpc(RPC_REQUEST_CLASS, &class_id.to_le_bytes(), REL_RELIABLE);
+                }
+
+                RPC_GAME_MODE_RESTART => {
+                    // Server is restarting — treat as disconnect so Python layer can reconnect.
+                    self.connected.store(false, Ordering::Relaxed);
+                    self.running.store(false, Ordering::Relaxed);
+                    fire!(self.callbacks, on_disconnect);
+                }
+
                 _ => {}
             }
             Some(())
@@ -1267,13 +1380,14 @@ impl SampClient {
         pkt[1 + 6..1 + 10].copy_from_slice(&px.to_le_bytes());
         pkt[1 + 10..1 + 14].copy_from_slice(&py.to_le_bytes());
         pkt[1 + 14..1 + 18].copy_from_slice(&pz.to_le_bytes());
-        // fQuaternion.w = 1.0 at offset 30
-        pkt[1 + 30..1 + 34].copy_from_slice(&1.0f32.to_le_bytes());
-        // byteHealth = 100 at offset 34
-        pkt[1 + 34] = 100;
-        // wSurfInfo = 0xFFFF at offset 62
-        pkt[1 + 62] = 0xFF;
-        pkt[1 + 63] = 0xFF;
+        // fQuaternion[3] at struct offset 30: SA:MP stores facing angle here (misc_funcs.cpp:40)
+        let rot = f32::from_bits(self.rotation_raw.load(Ordering::Relaxed));
+        pkt[1 + 30..1 + 34].copy_from_slice(&rot.to_le_bytes());
+        // byteHealth at offset 34, byteArmour at 35, byteCurrentWeapon at 36
+        pkt[1 + 34] = self.health.load(Ordering::Relaxed);
+        pkt[1 + 35] = self.armour.load(Ordering::Relaxed);
+        pkt[1 + 36] = self.weapon.load(Ordering::Relaxed);
+        // wSurfInfo at offset 62: 0 = not surfing on any vehicle
         pkt
     }
 
@@ -1305,17 +1419,21 @@ impl SampClient {
         pkt[3..5].copy_from_slice(&self.lr_analog.load(Ordering::Relaxed).to_le_bytes());
         pkt[5..7].copy_from_slice(&self.ud_analog.load(Ordering::Relaxed).to_le_bytes());
         pkt[7..9].copy_from_slice(&self.keys.load(Ordering::Relaxed).to_le_bytes());
-        // fQuaternion[4] at offset 9 — zeroed (stationary)
-        // vecPos at offset 25
+        // fQuaternion[4] at struct offset 8 → pkt[9..25]: zeroed (bot doesn't track vehicle angle)
+        // vecPos at struct offset 24 → pkt[25..37]
         let [px, py, pz] = *self.position.lock().unwrap();
         pkt[25..29].copy_from_slice(&px.to_le_bytes());
         pkt[29..33].copy_from_slice(&py.to_le_bytes());
         pkt[33..37].copy_from_slice(&pz.to_le_bytes());
-        // vecMoveSpeed at offset 37 — zeroed (stationary)
-        // fCarHealth at offset 49
+        // vecMoveSpeed at offset 36 → zeroed (stationary)
+        // fCarHealth at struct offset 48 → pkt[49..53]
         pkt[49..53].copy_from_slice(&1000.0f32.to_le_bytes());
-        // bytePlayerHealth at offset 53
-        pkt[53] = 100;
+        // bytePlayerHealth at struct offset 52 → pkt[53]
+        pkt[53] = self.health.load(Ordering::Relaxed);
+        // bytePlayerArmour at struct offset 53 → pkt[54]
+        pkt[54] = self.armour.load(Ordering::Relaxed);
+        // byteCurrentWeapon at struct offset 54 → pkt[55]
+        pkt[55] = self.weapon.load(Ordering::Relaxed);
         // TrailerID_or_ThrustAngle at struct offset 57 → pkt[58..60] — 0xFFFF = no trailer
         pkt[58..60].copy_from_slice(&0xFFFFu16.to_le_bytes());
         pkt
@@ -1331,9 +1449,12 @@ impl SampClient {
         pkt[1..3].copy_from_slice(&vehicle_id.to_le_bytes());
         // byteSeatFlags (lower 7 bits) | byteDriveBy (bit 7)
         pkt[3] = seat & 0x7F;
-        // byteCurrentWeapon at offset 4 — 0
-        // bytePlayerHealth at offset 5
-        pkt[5] = 100;
+        // byteCurrentWeapon at struct offset 3 → pkt[4]
+        pkt[4] = self.weapon.load(Ordering::Relaxed);
+        // bytePlayerHealth at struct offset 4 → pkt[5]
+        pkt[5] = self.health.load(Ordering::Relaxed);
+        // bytePlayerArmour at struct offset 5 → pkt[6]
+        pkt[6] = self.armour.load(Ordering::Relaxed);
         // lrAnalog at offset 7, udAnalog at offset 9, wKeys at offset 11
         pkt[7..9].copy_from_slice(&self.lr_analog.load(Ordering::Relaxed).to_le_bytes());
         pkt[9..11].copy_from_slice(&self.ud_analog.load(Ordering::Relaxed).to_le_bytes());
@@ -1343,6 +1464,58 @@ impl SampClient {
         pkt[13..17].copy_from_slice(&px.to_le_bytes());
         pkt[17..21].copy_from_slice(&py.to_le_bytes());
         pkt[21..25].copy_from_slice(&pz.to_le_bytes());
+        pkt
+    }
+
+    // ID_STATS_UPDATE (205): Packet_ID + INT32 money + INT32 drunk_level = 9 bytes
+    fn build_stats_update_pkt(&self) -> Vec<u8> {
+        let mut pkt = vec![0u8; 9];
+        pkt[0] = ID_STATS_UPDATE;
+        // money and drunk_level both 0
+        pkt
+    }
+
+    // ID_WEAPONS_UPDATE (204): Packet_ID + UINT16 target_player + UINT16 target_actor
+    //   + 12 × (UINT8 slot, UINT8 weapon, UINT16 ammo) = 1+2+2+48 = 53 bytes
+    fn build_weapons_update_pkt(&self) -> Vec<u8> {
+        let mut pkt = vec![0u8; 53];
+        pkt[0] = ID_WEAPONS_UPDATE;
+        // target_player = 0xFFFF (no target), target_actor = 0xFFFF
+        pkt[1..3].copy_from_slice(&0xFFFFu16.to_le_bytes());
+        pkt[3..5].copy_from_slice(&0xFFFFu16.to_le_bytes());
+        // 12 slots: slot_id increments, weapon=0, ammo=0
+        for i in 0u8..12 {
+            let off = 5 + (i as usize) * 4;
+            pkt[off] = i; // slot index
+                          // weapon and ammo stay 0
+        }
+        pkt
+    }
+
+    // AIM_SYNC_DATA (common.h) = 31 bytes:
+    //   byteCamMode(u8) vecAimf1(3xf32) vecAimPos(3xf32) fAimZ(f32)
+    //   [byteCamExtZoom:6 | byteWeaponState:2](u8) bUnk(u8)
+    // Reference: localplayer.cpp SendAimSyncData, misc_funcs.cpp onFootUpdateAtNormalPos
+    //   byteCamMode=4, vecAimf1=[0.1,0.1,0.1], vecAimPos=player_pos, bUnk=0x55
+    fn build_aim_sync_pkt(&self) -> Vec<u8> {
+        let mut pkt = vec![0u8; 1 + 31];
+        pkt[0] = ID_AIM_SYNC;
+        // byteCamMode at offset 0
+        pkt[1] = 4;
+        // vecAimf1[3] at offset 1
+        let aim_dir = 0.1f32.to_le_bytes();
+        pkt[2..6].copy_from_slice(&aim_dir);
+        pkt[6..10].copy_from_slice(&aim_dir);
+        pkt[10..14].copy_from_slice(&aim_dir);
+        // vecAimPos[3] at offset 13
+        let [px, py, pz] = *self.position.lock().unwrap();
+        pkt[14..18].copy_from_slice(&px.to_le_bytes());
+        pkt[18..22].copy_from_slice(&py.to_le_bytes());
+        pkt[22..26].copy_from_slice(&pz.to_le_bytes());
+        // fAimZ at offset 25 — zeroed
+        // byteCamExtZoom:6|byteWeaponState:2 at offset 29 — zeroed
+        // bUnk at offset 30 = 0x55
+        pkt[31] = 0x55;
         pkt
     }
 
@@ -1390,6 +1563,7 @@ impl SampClient {
         let mut last_keepalive = Instant::now();
         let mut last_ack_flush = Instant::now();
         let mut last_scores = Instant::now();
+        let mut last_stats = Instant::now();
         let mut recv_buf = [0u8; 2048];
 
         while self.running.load(Ordering::Relaxed) {
@@ -1399,12 +1573,15 @@ impl SampClient {
                 self.flush_acks();
                 last_ack_flush = now;
             }
-            if now.duration_since(last_keepalive) > Duration::from_millis(500) {
+            let keepalive_interval =
+                Duration::from_millis(self.onfoot_rate_ms.load(Ordering::Relaxed) as u64);
+            if now.duration_since(last_keepalive) > keepalive_interval {
                 // Only send sync after spawning — the reference (misc_funcs.cpp)
                 // calls onFootUpdateAtNormalPos() only inside the iSpawned == 1 branch.
                 // Sending it pre-spawn confuses the server's player state machine.
                 if self.spawned.load(Ordering::Relaxed) {
-                    let pkt = if self.spectating.load(Ordering::Relaxed) {
+                    let is_spectating = self.spectating.load(Ordering::Relaxed);
+                    let pkt = if is_spectating {
                         self.build_spectator_pkt()
                     } else {
                         match *self.current_vehicle.lock().unwrap() {
@@ -1414,12 +1591,26 @@ impl SampClient {
                         }
                     };
                     self.send_reliability_pkt(&pkt, REL_UNRELIABLE_SEQUENCED, 0, 0);
+                    // AIM_SYNC sent alongside every sync update (misc_funcs.cpp SendAimSyncData)
+                    if !is_spectating {
+                        let aim = self.build_aim_sync_pkt();
+                        self.send_reliability_pkt(&aim, REL_UNRELIABLE_SEQUENCED, 0, 0);
+                    }
                 }
                 last_keepalive = now;
             }
             if now.duration_since(last_scores) > Duration::from_secs(3) {
                 self.send_rpc(RPC_UPDATE_SCORES, &[], REL_RELIABLE);
                 last_scores = now;
+            }
+            if self.spawned.load(Ordering::Relaxed)
+                && now.duration_since(last_stats) > Duration::from_secs(1)
+            {
+                let stats = self.build_stats_update_pkt();
+                self.send_reliability_pkt(&stats, REL_UNRELIABLE_SEQUENCED, 0, 0);
+                let weapons = self.build_weapons_update_pkt();
+                self.send_reliability_pkt(&weapons, REL_UNRELIABLE_SEQUENCED, 0, 0);
+                last_stats = now;
             }
 
             let _ = sock.set_read_timeout(Some(Duration::from_millis(30)));
@@ -1712,9 +1903,17 @@ mod tests {
             &3.0f32.to_le_bytes(),
             "vecPos.z = 3.0 (default)"
         );
-        assert_eq!(&pkt[31..35], &1.0f32.to_le_bytes(), "quaternion.w = 1.0");
+        assert_eq!(
+            &pkt[31..35],
+            &0.0f32.to_le_bytes(),
+            "fQuaternion[3] = 0.0 (default facing)"
+        );
         assert_eq!(pkt[35], 100, "byteHealth = 100");
-        assert_eq!([pkt[63], pkt[64]], [0xFF, 0xFF], "wSurfInfo = 0xFFFF");
+        assert_eq!(
+            [pkt[63], pkt[64]],
+            [0x00, 0x00],
+            "wSurfInfo = 0 (not surfing)"
+        );
     }
 
     #[test]
