@@ -35,7 +35,7 @@ from enum import IntFlag
 from typing import Any, overload
 
 from pyraksamp import _core
-from pyraksamp._core import (
+from pyraksamp.exceptions import (
     SAMPConnectionError,
     SAMPBanned,
     SAMPInvalidPassword,

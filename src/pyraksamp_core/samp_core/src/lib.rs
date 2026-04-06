@@ -6,66 +6,16 @@ use std::sync::Arc;
 
 // ── Connection exceptions ─────────────────────────────────────────────────────
 
-pyo3::create_exception!(
-    _core,
-    SAMPConnectionError,
-    pyo3::exceptions::PyException,
-    "Base class for all SA:MP connection errors."
-);
-pyo3::create_exception!(
-    _core,
-    SAMPBanned,
-    SAMPConnectionError,
-    "The client is banned from the server."
-);
-pyo3::create_exception!(
-    _core,
-    SAMPInvalidPassword,
-    SAMPConnectionError,
-    "Wrong server password."
-);
-pyo3::create_exception!(
-    _core,
-    SAMPServerFull,
-    SAMPConnectionError,
-    "Server has no free player slots."
-);
-pyo3::create_exception!(
-    _core,
-    SAMPRejected,
-    SAMPConnectionError,
-    "Server actively refused the connection attempt."
-);
-pyo3::create_exception!(
-    _core,
-    SAMPHandshakeTimeout,
-    SAMPConnectionError,
-    "Server did not complete the open-connection handshake in time."
-);
-pyo3::create_exception!(
-    _core,
-    SAMPConnectionTimeout,
-    SAMPConnectionError,
-    "Server did not accept the connection request in time."
-);
-pyo3::create_exception!(
-    _core,
-    SAMPHostResolutionError,
-    SAMPConnectionError,
-    "Server hostname could not be resolved."
-);
-pyo3::create_exception!(
-    _core,
-    SAMPProxyError,
-    SAMPConnectionError,
-    "SOCKS5 proxy handshake failed."
-);
-pyo3::create_exception!(
-    _core,
-    SAMPSocketError,
-    SAMPConnectionError,
-    "Could not bind the local UDP socket."
-);
+pyo3::import_exception!(pyraksamp.exceptions, SAMPConnectionError);
+pyo3::import_exception!(pyraksamp.exceptions, SAMPBanned);
+pyo3::import_exception!(pyraksamp.exceptions, SAMPInvalidPassword);
+pyo3::import_exception!(pyraksamp.exceptions, SAMPServerFull);
+pyo3::import_exception!(pyraksamp.exceptions, SAMPRejected);
+pyo3::import_exception!(pyraksamp.exceptions, SAMPHandshakeTimeout);
+pyo3::import_exception!(pyraksamp.exceptions, SAMPConnectionTimeout);
+pyo3::import_exception!(pyraksamp.exceptions, SAMPHostResolutionError);
+pyo3::import_exception!(pyraksamp.exceptions, SAMPProxyError);
+pyo3::import_exception!(pyraksamp.exceptions, SAMPSocketError);
 
 // ── PySAMPClient ──────────────────────────────────────────────────────────────
 
@@ -1018,33 +968,6 @@ impl PySAMPClient {
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySAMPClient>()?;
-
-    // ── Connection exceptions ──────────────────────────────────────────────────
-    m.add(
-        "SAMPConnectionError",
-        m.py().get_type::<SAMPConnectionError>(),
-    )?;
-    m.add("SAMPBanned", m.py().get_type::<SAMPBanned>())?;
-    m.add(
-        "SAMPInvalidPassword",
-        m.py().get_type::<SAMPInvalidPassword>(),
-    )?;
-    m.add("SAMPServerFull", m.py().get_type::<SAMPServerFull>())?;
-    m.add("SAMPRejected", m.py().get_type::<SAMPRejected>())?;
-    m.add(
-        "SAMPHandshakeTimeout",
-        m.py().get_type::<SAMPHandshakeTimeout>(),
-    )?;
-    m.add(
-        "SAMPConnectionTimeout",
-        m.py().get_type::<SAMPConnectionTimeout>(),
-    )?;
-    m.add(
-        "SAMPHostResolutionError",
-        m.py().get_type::<SAMPHostResolutionError>(),
-    )?;
-    m.add("SAMPProxyError", m.py().get_type::<SAMPProxyError>())?;
-    m.add("SAMPSocketError", m.py().get_type::<SAMPSocketError>())?;
 
     // Reliability constants
     m.add("UNRELIABLE", 6u8)?;

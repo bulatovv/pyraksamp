@@ -8,11 +8,9 @@ Re-run whenever submodules are added or removed. The generated pages use
 plain `:::` directives with no member listing — mkdocstrings discovers
 public members automatically from each module's __all__.
 
-Pages that are NOT generated (maintained by hand because they contain
-non-Python content or Rust-sourced symbols):
+Pages that are NOT generated (maintained by hand):
     docs/api/index.md     — overview table
-    docs/api/constants.md — Keys enum + RPC ID tables
-    docs/api/exceptions.md — Rust-sourced exception hierarchy
+    docs/api/constants.md — Keys enum + reliability flags
 """
 
 import pathlib
@@ -73,7 +71,7 @@ def main() -> None:
         print(f"  wrote {page}  ({dotpath})")
 
     # Print a reminder about manually maintained pages.
-    manual = ["index.md", "constants.md", "exceptions.md"]
+    manual = ["index.md", "constants.md"]
     print(f"\nManually maintained (not touched): {', '.join(manual)}")
 
 
