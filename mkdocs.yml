@@ -1,0 +1,68 @@
+site_name: pyraksamp
+site_description: SA:MP 0.3.7 async headless client library
+repo_url: https://github.com/bulatovv/pyraksamp
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: numpy
+            show_source: false
+            show_root_heading: true
+            show_root_toc_entry: true
+            show_submodules: false
+            members_order: source
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quickstart: getting-started/quickstart.md
+  - Guides:
+    - Connecting: guides/connecting.md
+    - Event-Based and Script-Based Flows: guides/flows.md
+    - Working with Dialogs: guides/dialogs.md
+    - Working with TextDraws: guides/textdraws.md
+    - Actions: guides/actions.md
+    - Interactive Shell: guides/shell.md
+  - Recipes:
+    - Overview: recipes/index.md
+    - Chat Logger: recipes/chat-logger.md
+    - Auto Register: recipes/auto-register.md
+    - Command Bot: recipes/command-bot.md
+    - Key Presser: recipes/key-presser.md
+  - Concepts:
+    - Architecture: concepts/architecture.md
+    - Connection Lifecycle: concepts/connection-lifecycle.md
+  - API Reference:
+    - Overview: api/index.md
+    - SAMPBot: api/bot.md
+    - Events: api/events.md
+    - Dialogs: api/dialogs.md
+    - TextDraws: api/textdraws.md
+    - Colors: api/colors.md
+    - Shell: api/shell.md
+    - Constants: api/constants.md
+    - Exceptions: api/exceptions.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true

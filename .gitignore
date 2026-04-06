@@ -12,3 +12,4 @@ wheels/
 reference
 src/pyraksamp_core/target/
 *.so
+site/
