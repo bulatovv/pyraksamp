@@ -108,6 +108,7 @@ from pyraksamp.textdraws import SelectableTextDraw, TextDraw, TextDraws
 __all__ = [
     # Client
     "SAMPBot",
+    "Router",
     # Key constants
     "Keys",
     # TextDraw types
@@ -1250,6 +1251,74 @@ class SAMPBot:
         )
         return server
 
+    def include_router(self, router: "Router") -> None:
+        """Register all handlers from *router*, injecting this bot as first argument.
+
+        Each handler in the router receives the bot as its first positional
+        argument followed by the event object::
+
+            router = Router()
+
+            @router.on_chat()
+            async def on_chat(bot, msg):
+                bot.send_chat("hi")
+
+            bot.include_router(router)
+        """
+        for method_name, fn, kwargs in router._registrations:
+            if inspect.iscoroutinefunction(fn):
+                async def wrapped(*args, _fn=fn):
+                    return await _fn(self, *args)
+            else:
+                def wrapped(*args, _fn=fn):
+                    return _fn(self, *args)
+            getattr(self, method_name)(wrapped, **kwargs)
+
 
 # Backwards-compatibility alias
 SAMPClient = SAMPBot
+
+
+class Router:
+    """Collects event handler registrations independently of a bot instance.
+
+    Handlers registered on a router receive the bot as their first argument,
+    followed by the event object.  Attach a router to a bot with
+    :meth:`SAMPBot.include_router`::
+
+        # handlers/chat.py
+        from pyraksamp import Router
+
+        router = Router()
+
+        @router.on_chat()
+        async def on_chat(bot, msg):
+            bot.send_chat(f"echo: {msg.text.stripped}")
+
+        @router.on_dialog()
+        async def on_dialog(bot, dlg):
+            dlg.buttons[0].click()
+
+        # main.py
+        from handlers import chat
+
+        await bot.start()
+        bot.include_router(chat.router)
+        await bot.run_until_disconnected()
+    """
+
+    def __init__(self) -> None:
+        self._registrations: list[tuple[str, Callable, dict]] = []
+
+    def __getattr__(self, name: str):
+        if not name.startswith("on_"):
+            raise AttributeError(name)
+
+        def register(fn: Callable | None = None, **kwargs):
+            def decorator(f: Callable) -> Callable:
+                self._registrations.append((name, f, kwargs))
+                return f
+
+            return decorator(fn) if fn is not None else decorator
+
+        return register
