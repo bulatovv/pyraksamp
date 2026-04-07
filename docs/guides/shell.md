@@ -85,8 +85,7 @@ For headless deployments, expose the shell over a Unix socket and attach from an
 # In your bot script:
 server = await bot.expose_shell()      # starts TUI + Unix socket relay
 # bot continues running in the background
-async for _ in bot.events():
-    pass
+await bot.run_until_disconnected()
 ```
 
 Attach from any terminal on the same machine:

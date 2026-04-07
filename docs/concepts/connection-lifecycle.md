@@ -23,7 +23,7 @@ bot.disconnect()      ← send disconnect RPC, stop receive loop
      │
 "disconnect" event fires  ← @bot.on_disconnect callbacks run
      │
-bot.events() exits    ← async for loop terminates
+run_until_disconnected() returns
 ```
 
 ## connect event
@@ -46,7 +46,7 @@ async def disconnected():
     print("Disconnected")
 ```
 
-The `bot.events()` generator also stops after yielding the disconnect event, so `async for _ in bot.events(): pass` is the natural way to keep the script alive until disconnected.
+`await bot.run_until_disconnected()` keeps the script alive until the bot disconnects.
 
 ## Timeout behavior
 
@@ -61,8 +61,7 @@ while True:
     bot = pyraksamp.SAMPBot(host, port, nick)
     try:
         await bot.start()
-        async for _ in bot.events():
-            pass
+        await bot.run_until_disconnected()
     except pyraksamp.SAMPConnectionError as e:
         print(f"Connection failed: {e}, retrying...")
         await asyncio.sleep(5)

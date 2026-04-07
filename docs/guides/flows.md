@@ -20,8 +20,7 @@ async def on_dialog(dlg):
     dlg.buttons[0].click()
 
 await bot.start()
-async for _ in bot.events():
-    pass
+await bot.run_until_disconnected()
 ```
 
 Filtering is available on most decorators:
@@ -110,8 +109,7 @@ dlg = await bot.wait_for_dialog(dialog_type=pyraksamp.InputDialog)
 dlg.submit("MyPassword")
 
 # Registered handlers continue to fire from here
-async for _ in bot.events():
-    pass
+await bot.run_until_disconnected()
 ```
 
 ---
@@ -134,8 +132,7 @@ async def connected():
     print("Ready to play!")
 
 await bot.start()
-async for _ in bot.events():
-    pass
+await bot.run_until_disconnected()
 ```
 
 !!! note "Concurrency caveat"
@@ -167,8 +164,7 @@ async def on_dialog(dlg):
     dlg.buttons[0].click()
 
 # Keep running
-async for _ in bot.events():
-    pass
+await bot.run_until_disconnected()
 ```
 
 Events seen during the `wait_for_*` calls are consumed by those calls and are not replayed to subsequently registered handlers. Handlers only receive events that arrive after they are registered.

@@ -30,8 +30,7 @@ async def main():
             bot.send_chat(f"Hi, player {msg.player_id}!")
 
     await bot.start()
-    async for _ in bot.events():
-        pass
+    await bot.run_until_disconnected()
 
 asyncio.run(main())
 ```

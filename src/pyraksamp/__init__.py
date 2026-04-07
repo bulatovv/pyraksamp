@@ -18,11 +18,8 @@ Quick start::
             # Sequential: await anything while events still fire
             await bot.send_dialog_response(dlg.dialog_id, button=1)
 
-        if not await bot.start():
-            return
-
-        async for event in bot.events():
-            pass  # keep running until disconnected
+        await bot.start()
+        await bot.run_until_disconnected()
 
     asyncio.run(main())
 """
@@ -488,6 +485,19 @@ class SAMPBot:
     def stop(self) -> None:
         """Signal the receive loop to stop without sending a disconnect packet."""
         self._client.stop()
+
+    async def run_until_disconnected(self) -> None:
+        """Block until the bot disconnects.
+
+        Intended as the final line of a ``main`` coroutine after
+        :meth:`start` and any sequential setup::
+
+            await bot.start()
+            # login flow, handler registration, …
+            await bot.run_until_disconnected()
+        """
+        async for _ in self.events():
+            pass
 
     # ── State ──────────────────────────────────────────────────────────────────
 

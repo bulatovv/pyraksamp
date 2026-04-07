@@ -29,8 +29,7 @@ async def main():
 
     await bot.start()
 
-    async for _ in bot.events():
-        pass  # keep running until disconnected
+    await bot.run_until_disconnected()  # keep running until disconnected
 
 asyncio.run(main())
 ```
@@ -41,8 +40,7 @@ asyncio.run(main())
 2. The `@on_*` decorators register callbacks. They can be registered at any time — before or after `start()`.
 3. `await bot.start()` performs the SA:MP handshake and raises a specific exception
    (e.g. `SAMPBanned`, `SAMPServerFull`) if the connection is refused.
-4. `async for _ in bot.events()` keeps the script alive. The loop exits automatically when
-   the bot disconnects.
+4. `await bot.run_until_disconnected()` keeps the script alive until the bot disconnects.
 
 ### Handling connection errors
 

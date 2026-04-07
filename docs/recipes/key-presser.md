@@ -21,8 +21,7 @@ async def main():
         await bot.press_keys(Keys.SPRINT | Keys.JUMP, duration=0.5)
 
     await bot.start()
-    async for _ in bot.events():
-        pass
+    await bot.run_until_disconnected()
 
 asyncio.run(main())
 ```

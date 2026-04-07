@@ -54,8 +54,7 @@ async def main():
         # dismiss any unexpected dialogs
         dlg.buttons[0].click()
 
-    async for _ in bot.events():
-        pass
+    await bot.run_until_disconnected()
 
 asyncio.run(main())
 ```
