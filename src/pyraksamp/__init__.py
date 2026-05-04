@@ -107,128 +107,128 @@ from pyraksamp.textdraws import SelectableTextDraw, TextDraw, TextDraws
 
 __all__ = [
     # Client
-    "SAMPBot",
-    "Router",
+    'SAMPBot',
+    'Router',
     # Key constants
-    "Keys",
+    'Keys',
     # TextDraw types
-    "TextDraw",
-    "TextDraws",
-    "SelectableTextDraw",
-    "SAMPClient",  # backwards-compatibility alias
-    "gen_gpci",
+    'TextDraw',
+    'TextDraws',
+    'SelectableTextDraw',
+    'SAMPClient',  # backwards-compatibility alias
+    'gen_gpci',
     # Reliability constants (used with send_rpc)
-    "UNRELIABLE",
-    "UNRELIABLE_SEQUENCED",
-    "RELIABLE",
-    "RELIABLE_ORDERED",
-    "RELIABLE_SEQUENCED",
+    'UNRELIABLE',
+    'UNRELIABLE_SEQUENCED',
+    'RELIABLE',
+    'RELIABLE_ORDERED',
+    'RELIABLE_SEQUENCED',
     # RPC ID constants – server→client
-    "RPC_SERVER_JOIN",
-    "RPC_SERVER_QUIT",
-    "RPC_INIT_GAME",
-    "RPC_CHAT",
-    "RPC_CLIENT_MESSAGE",
-    "RPC_DIALOG_BOX",
-    "RPC_GAME_TEXT",
-    "RPC_SET_HEALTH",
-    "RPC_SET_ARMOUR",
-    "RPC_SET_POSITION",
-    "RPC_SET_CHECKPOINT",
-    "RPC_DISABLE_CHECKPOINT",
-    "RPC_WORLD_PLAYER_ADD",
-    "RPC_WORLD_PLAYER_REMOVE",
-    "RPC_CONNECTION_REJ",
-    "RPC_SET_PLAYER_NAME",
-    "RPC_TOGGLE_CONTROLLABLE",
-    "RPC_SET_PLAYER_TIME",
-    "RPC_SEND_DEATH_MESSAGE",
-    "RPC_SET_ARMED_WEAPON",
-    "RPC_SET_SPAWN_INFO",
-    "RPC_SET_PLAYER_TEAM",
-    "RPC_PUT_IN_VEHICLE",
-    "RPC_REMOVE_FROM_VEHICLE",
-    "RPC_SET_PLAYER_COLOR",
-    "RPC_SET_WORLD_TIME",
-    "RPC_TOGGLE_SPECTATING",
-    "RPC_SET_WANTED_LEVEL",
-    "RPC_SET_WEAPON_AMMO",
-    "RPC_SET_GRAVITY",
-    "RPC_SET_WEATHER",
-    "RPC_SET_PLAYER_SKIN",
-    "RPC_SET_INTERIOR",
-    "RPC_WORLD_VEHICLE_ADD",
-    "RPC_WORLD_VEHICLE_REMOVE",
-    "RPC_DEATH_BROADCAST",
+    'RPC_SERVER_JOIN',
+    'RPC_SERVER_QUIT',
+    'RPC_INIT_GAME',
+    'RPC_CHAT',
+    'RPC_CLIENT_MESSAGE',
+    'RPC_DIALOG_BOX',
+    'RPC_GAME_TEXT',
+    'RPC_SET_HEALTH',
+    'RPC_SET_ARMOUR',
+    'RPC_SET_POSITION',
+    'RPC_SET_CHECKPOINT',
+    'RPC_DISABLE_CHECKPOINT',
+    'RPC_WORLD_PLAYER_ADD',
+    'RPC_WORLD_PLAYER_REMOVE',
+    'RPC_CONNECTION_REJ',
+    'RPC_SET_PLAYER_NAME',
+    'RPC_TOGGLE_CONTROLLABLE',
+    'RPC_SET_PLAYER_TIME',
+    'RPC_SEND_DEATH_MESSAGE',
+    'RPC_SET_ARMED_WEAPON',
+    'RPC_SET_SPAWN_INFO',
+    'RPC_SET_PLAYER_TEAM',
+    'RPC_PUT_IN_VEHICLE',
+    'RPC_REMOVE_FROM_VEHICLE',
+    'RPC_SET_PLAYER_COLOR',
+    'RPC_SET_WORLD_TIME',
+    'RPC_TOGGLE_SPECTATING',
+    'RPC_SET_WANTED_LEVEL',
+    'RPC_SET_WEAPON_AMMO',
+    'RPC_SET_GRAVITY',
+    'RPC_SET_WEATHER',
+    'RPC_SET_PLAYER_SKIN',
+    'RPC_SET_INTERIOR',
+    'RPC_WORLD_VEHICLE_ADD',
+    'RPC_WORLD_VEHICLE_REMOVE',
+    'RPC_DEATH_BROADCAST',
     # RPC ID constants – client→server
-    "RPC_CLIENT_JOIN",
-    "RPC_REQUEST_CLASS",
-    "RPC_REQUEST_SPAWN",
-    "RPC_SPAWN",
-    "RPC_DIALOG_RESPONSE",
-    "RPC_DEATH",
-    "RPC_ENTER_VEHICLE",
-    "RPC_EXIT_VEHICLE",
-    "RPC_SERVER_COMMAND",
+    'RPC_CLIENT_JOIN',
+    'RPC_REQUEST_CLASS',
+    'RPC_REQUEST_SPAWN',
+    'RPC_SPAWN',
+    'RPC_DIALOG_RESPONSE',
+    'RPC_DEATH',
+    'RPC_ENTER_VEHICLE',
+    'RPC_EXIT_VEHICLE',
+    'RPC_SERVER_COMMAND',
     # Dialog types
-    "AnyDialog",
-    "MsgboxDialog",
-    "InputDialog",
-    "PasswordDialog",
-    "ListDialog",
-    "TablistDialog",
-    "TablistHeadersDialog",
+    'AnyDialog',
+    'MsgboxDialog',
+    'InputDialog',
+    'PasswordDialog',
+    'ListDialog',
+    'TablistDialog',
+    'TablistHeadersDialog',
     # Connection exceptions
-    "SAMPConnectionError",
-    "SAMPBanned",
-    "SAMPInvalidPassword",
-    "SAMPServerFull",
-    "SAMPRejected",
-    "SAMPHandshakeTimeout",
-    "SAMPConnectionTimeout",
-    "SAMPHostResolutionError",
-    "SAMPProxyError",
-    "SAMPSocketError",
+    'SAMPConnectionError',
+    'SAMPBanned',
+    'SAMPInvalidPassword',
+    'SAMPServerFull',
+    'SAMPRejected',
+    'SAMPHandshakeTimeout',
+    'SAMPConnectionTimeout',
+    'SAMPHostResolutionError',
+    'SAMPProxyError',
+    'SAMPSocketError',
     # Dialog errors
-    "DialogAlreadyRespondedError",
+    'DialogAlreadyRespondedError',
     # Dialog helpers
-    "Button",
-    "ButtonSelector",
-    "ListRow",
-    "TablistRow",
-    "RowSelector",
+    'Button',
+    'ButtonSelector',
+    'ListRow',
+    'TablistRow',
+    'RowSelector',
     # Event types
-    "ChatMessage",
-    "ServerMessage",
-    "GameText",
-    "PlayerJoin",
-    "PlayerQuit",
-    "PlayerStreamIn",
-    "PlayerStreamOut",
-    "SetHealth",
-    "SetArmour",
-    "SetPosition",
-    "Checkpoint",
-    "PlayerNameChange",
-    "ToggleControllable",
-    "PlayerTime",
-    "DeathMessage",
-    "SetArmedWeapon",
-    "SpawnInfo",
-    "PlayerTeam",
-    "PutInVehicle",
-    "PlayerColor",
-    "WorldTime",
-    "ToggleSpectating",
-    "WantedLevel",
-    "WeaponAmmo",
-    "Gravity",
-    "Weather",
-    "PlayerSkin",
-    "SetInterior",
-    "VehicleStreamIn",
-    "VehicleStreamOut",
-    "PlayerDeath",
+    'ChatMessage',
+    'ServerMessage',
+    'GameText',
+    'PlayerJoin',
+    'PlayerQuit',
+    'PlayerStreamIn',
+    'PlayerStreamOut',
+    'SetHealth',
+    'SetArmour',
+    'SetPosition',
+    'Checkpoint',
+    'PlayerNameChange',
+    'ToggleControllable',
+    'PlayerTime',
+    'DeathMessage',
+    'SetArmedWeapon',
+    'SpawnInfo',
+    'PlayerTeam',
+    'PutInVehicle',
+    'PlayerColor',
+    'WorldTime',
+    'ToggleSpectating',
+    'WantedLevel',
+    'WeaponAmmo',
+    'Gravity',
+    'Weather',
+    'PlayerSkin',
+    'SetInterior',
+    'VehicleStreamIn',
+    'VehicleStreamOut',
+    'PlayerDeath',
 ]
 
 # ── Re-export reliability constants ───────────────────────────────────────────
@@ -372,10 +372,10 @@ class SAMPBot:
         self,
         host: str,
         port: int = 7777,
-        nickname: str = "PyBot",
-        password: str = "",
-        gpci: str = "",
-        server_encoding: str = "utf-8",
+        nickname: str = 'PyBot',
+        password: str = '',
+        gpci: str = '',
+        server_encoding: str = 'utf-8',
         proxy: str | None = None,
     ):
         if not gpci:
@@ -454,22 +454,20 @@ class SAMPBot:
             Could not bind the local UDP socket.
         """
         loop = asyncio.get_running_loop()
-        _setup_bridge(
-            self._client, self._bus, self._make_dialog, loop, self._server_encoding
-        )
+        _setup_bridge(self._client, self._bus, self._make_dialog, loop, self._server_encoding)
         self._dispatcher.start()
         # Feed textdraw events into the registry (must be registered before user listeners)
         for tag, fn in [
-            ("textdraw_show", self.textdraws._on_show),
-            ("textdraw_hide", self.textdraws._on_hide),
-            ("textdraw_edit", self.textdraws._on_edit),
-            ("textdraw_toggle_select", self.textdraws._on_toggle_select),
-            ("disconnect", self.textdraws._on_disconnect),
+            ('textdraw_show', self.textdraws._on_show),
+            ('textdraw_hide', self.textdraws._on_hide),
+            ('textdraw_edit', self.textdraws._on_edit),
+            ('textdraw_toggle_select', self.textdraws._on_toggle_select),
+            ('disconnect', self.textdraws._on_disconnect),
         ]:
             self._register_listener(
                 _CallbackListener(self._dispatcher, tag, fn, extract=lambda e: e[1:])
             )
-        if not getattr(self, "_atexit_registered", False):
+        if not getattr(self, '_atexit_registered', False):
             import atexit
 
             atexit.register(self._client.stop)
@@ -516,12 +514,12 @@ class SAMPBot:
 
     def on_connect[F: Callable](self, fn: F) -> F:
         """Register a callback invoked when the client connects."""
-        self._register_handler("connect", fn, extract=_NO_ARG)
+        self._register_handler('connect', fn, extract=_NO_ARG)
         return fn
 
     def on_disconnect[F: Callable](self, fn: F) -> F:
         """Register a callback invoked when the client disconnects."""
-        self._register_handler("disconnect", fn, extract=_NO_ARG)
+        self._register_handler('disconnect', fn, extract=_NO_ARG)
         return fn
 
     def on_rpc[F: Callable](
@@ -549,7 +547,8 @@ class SAMPBot:
                 )
 
             self._register_handler(
-                "rpc", f,
+                'rpc',
+                f,
                 predicate=filt if (rpc_id is not None or predicate is not None) else None,
                 extract=lambda e: (e[1], e[2]),
             )
@@ -568,8 +567,8 @@ class SAMPBot:
         """Register a callback invoked when a player joins."""
 
         def decorator(f: F) -> F:
-            filt = _make_obj_filter(predicate, {"player_id": player_id, "name": name})
-            self._register_handler("player_join", f, filt)
+            filt = _make_obj_filter(predicate, {'player_id': player_id, 'name': name})
+            self._register_handler('player_join', f, filt)
             return f
 
         return decorator(fn) if fn is not None else decorator
@@ -584,8 +583,8 @@ class SAMPBot:
         """Register a callback invoked when a player disconnects."""
 
         def decorator(f: F) -> F:
-            filt = _make_obj_filter(predicate, {"player_id": player_id})
-            self._register_handler("player_quit", f, filt)
+            filt = _make_obj_filter(predicate, {'player_id': player_id})
+            self._register_handler('player_quit', f, filt)
             return f
 
         return decorator(fn) if fn is not None else decorator
@@ -600,8 +599,8 @@ class SAMPBot:
         """Register a callback invoked for each public chat message."""
 
         def decorator(f: F) -> F:
-            filt = _make_obj_filter(predicate, {"player_id": player_id})
-            self._register_handler("chat", f, filt)
+            filt = _make_obj_filter(predicate, {'player_id': player_id})
+            self._register_handler('chat', f, filt)
             return f
 
         return decorator(fn) if fn is not None else decorator
@@ -616,8 +615,8 @@ class SAMPBot:
         """Register a callback invoked for each server message."""
 
         def decorator(f: F) -> F:
-            filt = _make_obj_filter(predicate, {"color": color})
-            self._register_handler("client_message", f, filt)
+            filt = _make_obj_filter(predicate, {'color': color})
+            self._register_handler('client_message', f, filt)
             return f
 
         return decorator(fn) if fn is not None else decorator
@@ -668,9 +667,9 @@ class SAMPBot:
 
         def decorator(f: Callable[[Any], Any]) -> Callable[[Any], Any]:
             filt = _make_obj_filter(
-                predicate, {"dialog_id": dialog_id}, instance_of=dialog_type
+                predicate, {'dialog_id': dialog_id}, instance_of=dialog_type
             )
-            self._register_handler("dialog", f, filt)
+            self._register_handler('dialog', f, filt)
             return f
 
         if fn is not None:
@@ -687,122 +686,122 @@ class SAMPBot:
         """Register a callback invoked for ShowGameText."""
 
         def decorator(f: F) -> F:
-            filt = _make_obj_filter(predicate, {"style": style})
-            self._register_handler("game_text", f, filt)
+            filt = _make_obj_filter(predicate, {'style': style})
+            self._register_handler('game_text', f, filt)
             return f
 
         return decorator(fn) if fn is not None else decorator
 
     def on_set_health[F: Callable](self, fn: F) -> F:
-        self._register_handler("set_health", fn)
+        self._register_handler('set_health', fn)
         return fn
 
     def on_set_armour[F: Callable](self, fn: F) -> F:
-        self._register_handler("set_armour", fn)
+        self._register_handler('set_armour', fn)
         return fn
 
     def on_set_position[F: Callable](self, fn: F) -> F:
-        self._register_handler("set_position", fn)
+        self._register_handler('set_position', fn)
         return fn
 
     def on_checkpoint[F: Callable](self, fn: F) -> F:
-        self._register_handler("checkpoint", fn)
+        self._register_handler('checkpoint', fn)
         return fn
 
     def on_checkpoint_disabled[F: Callable](self, fn: F) -> F:
-        self._register_handler("checkpoint_disabled", fn, extract=_NO_ARG)
+        self._register_handler('checkpoint_disabled', fn, extract=_NO_ARG)
         return fn
 
     def on_player_streamed_in[F: Callable](self, fn: F) -> F:
-        self._register_handler("player_streamed_in", fn)
+        self._register_handler('player_streamed_in', fn)
         return fn
 
     def on_player_streamed_out[F: Callable](self, fn: F) -> F:
-        self._register_handler("player_streamed_out", fn)
+        self._register_handler('player_streamed_out', fn)
         return fn
 
     def on_player_name[F: Callable](self, fn: F) -> F:
-        self._register_handler("player_name", fn)
+        self._register_handler('player_name', fn)
         return fn
 
     def on_toggle_controllable[F: Callable](self, fn: F) -> F:
-        self._register_handler("toggle_controllable", fn)
+        self._register_handler('toggle_controllable', fn)
         return fn
 
     def on_player_time[F: Callable](self, fn: F) -> F:
-        self._register_handler("player_time", fn)
+        self._register_handler('player_time', fn)
         return fn
 
     def on_death_message[F: Callable](self, fn: F) -> F:
-        self._register_handler("death_message", fn)
+        self._register_handler('death_message', fn)
         return fn
 
     def on_set_armed_weapon[F: Callable](self, fn: F) -> F:
-        self._register_handler("set_armed_weapon", fn)
+        self._register_handler('set_armed_weapon', fn)
         return fn
 
     def on_spawn_info[F: Callable](self, fn: F) -> F:
-        self._register_handler("spawn_info", fn)
+        self._register_handler('spawn_info', fn)
         return fn
 
     def on_player_team[F: Callable](self, fn: F) -> F:
-        self._register_handler("player_team", fn)
+        self._register_handler('player_team', fn)
         return fn
 
     def on_put_in_vehicle[F: Callable](self, fn: F) -> F:
-        self._register_handler("put_in_vehicle", fn)
+        self._register_handler('put_in_vehicle', fn)
         return fn
 
     def on_remove_from_vehicle[F: Callable](self, fn: F) -> F:
-        self._register_handler("remove_from_vehicle", fn, extract=_NO_ARG)
+        self._register_handler('remove_from_vehicle', fn, extract=_NO_ARG)
         return fn
 
     def on_player_color[F: Callable](self, fn: F) -> F:
-        self._register_handler("player_color", fn)
+        self._register_handler('player_color', fn)
         return fn
 
     def on_world_time[F: Callable](self, fn: F) -> F:
-        self._register_handler("world_time", fn)
+        self._register_handler('world_time', fn)
         return fn
 
     def on_toggle_spectating[F: Callable](self, fn: F) -> F:
-        self._register_handler("toggle_spectating", fn)
+        self._register_handler('toggle_spectating', fn)
         return fn
 
     def on_wanted_level[F: Callable](self, fn: F) -> F:
-        self._register_handler("wanted_level", fn)
+        self._register_handler('wanted_level', fn)
         return fn
 
     def on_weapon_ammo[F: Callable](self, fn: F) -> F:
-        self._register_handler("weapon_ammo", fn)
+        self._register_handler('weapon_ammo', fn)
         return fn
 
     def on_gravity[F: Callable](self, fn: F) -> F:
-        self._register_handler("gravity", fn)
+        self._register_handler('gravity', fn)
         return fn
 
     def on_weather[F: Callable](self, fn: F) -> F:
-        self._register_handler("weather", fn)
+        self._register_handler('weather', fn)
         return fn
 
     def on_player_skin[F: Callable](self, fn: F) -> F:
-        self._register_handler("player_skin", fn)
+        self._register_handler('player_skin', fn)
         return fn
 
     def on_set_interior[F: Callable](self, fn: F) -> F:
-        self._register_handler("set_interior", fn)
+        self._register_handler('set_interior', fn)
         return fn
 
     def on_vehicle_streamed_in[F: Callable](self, fn: F) -> F:
-        self._register_handler("vehicle_streamed_in", fn)
+        self._register_handler('vehicle_streamed_in', fn)
         return fn
 
     def on_vehicle_streamed_out[F: Callable](self, fn: F) -> F:
-        self._register_handler("vehicle_streamed_out", fn)
+        self._register_handler('vehicle_streamed_out', fn)
         return fn
 
     def on_player_death[F: Callable](self, fn: F) -> F:
-        self._register_handler("player_death", fn)
+        self._register_handler('player_death', fn)
         return fn
 
     def on_textdraw(
@@ -827,7 +826,7 @@ class SAMPBot:
         selectable:
             True → only SelectableTextDraw; False → exclude them; None → all.
         """
-        filt = _make_obj_filter(predicate, {"id": id, "text": text})
+        filt = _make_obj_filter(predicate, {'id': id, 'text': text})
 
         def decorator(f):
             async def wrapped(td_id, *_args):
@@ -849,7 +848,9 @@ class SAMPBot:
                     f(td)
 
             self._register_handler(
-                "textdraw_show", wrapped, extract=lambda e: (e[1],),
+                'textdraw_show',
+                wrapped,
+                extract=lambda e: (e[1],),
             )
             return f
 
@@ -864,9 +865,9 @@ class SAMPBot:
         try:
             while True:
                 event = await q.get()
-                if event[0] == "disconnect":
+                if event[0] == 'disconnect':
                     return
-                if event[0] == "rpc":
+                if event[0] == 'rpc':
                     rid, data = event[1], event[2]
                     if rpc_id is None or rid == rpc_id:
                         yield rid, data
@@ -881,90 +882,90 @@ class SAMPBot:
             while True:
                 event = await q.get()
                 yield event
-                if event[0] == "disconnect":
+                if event[0] == 'disconnect':
                     return
         finally:
             self._bus.unsubscribe(q)
 
     def chat(self) -> _StreamListener:
         """Async generator yielding ChatMessage for each public chat message."""
-        return _StreamListener(self._dispatcher, "chat")
+        return _StreamListener(self._dispatcher, 'chat')
 
     def server_messages(self) -> _StreamListener:
         """Async generator yielding ServerMessage for each client message."""
-        return _StreamListener(self._dispatcher, "client_message")
+        return _StreamListener(self._dispatcher, 'client_message')
 
     def dialogs(self) -> _StreamListener:
         """Async generator yielding AnyDialog each time a dialog is shown."""
-        return _StreamListener(self._dispatcher, "dialog")
+        return _StreamListener(self._dispatcher, 'dialog')
 
     def game_texts(self) -> _StreamListener:
         """Async generator yielding GameText for each ShowGameText."""
-        return _StreamListener(self._dispatcher, "game_text")
+        return _StreamListener(self._dispatcher, 'game_text')
 
     def player_joins(self) -> _StreamListener:
         """Async generator yielding PlayerJoin for each connecting player."""
-        return _StreamListener(self._dispatcher, "player_join")
+        return _StreamListener(self._dispatcher, 'player_join')
 
     def player_quits(self) -> _StreamListener:
         """Async generator yielding PlayerQuit for each disconnecting player."""
-        return _StreamListener(self._dispatcher, "player_quit")
+        return _StreamListener(self._dispatcher, 'player_quit')
 
     def player_stream_ins(self) -> _StreamListener:
         """Async generator yielding PlayerStreamIn."""
-        return _StreamListener(self._dispatcher, "player_streamed_in")
+        return _StreamListener(self._dispatcher, 'player_streamed_in')
 
     def player_stream_outs(self) -> _StreamListener:
         """Async generator yielding PlayerStreamOut."""
-        return _StreamListener(self._dispatcher, "player_streamed_out")
+        return _StreamListener(self._dispatcher, 'player_streamed_out')
 
     def player_name_changes(self) -> _StreamListener:
         """Async generator yielding PlayerNameChange."""
-        return _StreamListener(self._dispatcher, "player_name")
+        return _StreamListener(self._dispatcher, 'player_name')
 
     def death_messages(self) -> _StreamListener:
         """Async generator yielding DeathMessage."""
-        return _StreamListener(self._dispatcher, "death_message")
+        return _StreamListener(self._dispatcher, 'death_message')
 
     def spawn_infos(self) -> _StreamListener:
         """Async generator yielding SpawnInfo."""
-        return _StreamListener(self._dispatcher, "spawn_info")
+        return _StreamListener(self._dispatcher, 'spawn_info')
 
     def put_in_vehicles(self) -> _StreamListener:
         """Async generator yielding PutInVehicle."""
-        return _StreamListener(self._dispatcher, "put_in_vehicle")
+        return _StreamListener(self._dispatcher, 'put_in_vehicle')
 
     def player_colors(self) -> _StreamListener:
         """Async generator yielding PlayerColor."""
-        return _StreamListener(self._dispatcher, "player_color")
+        return _StreamListener(self._dispatcher, 'player_color')
 
     def weather_changes(self) -> _StreamListener:
         """Async generator yielding Weather."""
-        return _StreamListener(self._dispatcher, "weather")
+        return _StreamListener(self._dispatcher, 'weather')
 
     def gravity_changes(self) -> _StreamListener:
         """Async generator yielding Gravity."""
-        return _StreamListener(self._dispatcher, "gravity")
+        return _StreamListener(self._dispatcher, 'gravity')
 
     def player_skins(self) -> _StreamListener:
         """Async generator yielding PlayerSkin."""
-        return _StreamListener(self._dispatcher, "player_skin")
+        return _StreamListener(self._dispatcher, 'player_skin')
 
     def interior_changes(self) -> _StreamListener:
         """Async generator yielding SetInterior."""
-        return _StreamListener(self._dispatcher, "set_interior")
+        return _StreamListener(self._dispatcher, 'set_interior')
 
     def vehicle_stream_ins(self) -> _StreamListener:
         """Async generator yielding VehicleStreamIn."""
-        return _StreamListener(self._dispatcher, "vehicle_streamed_in")
+        return _StreamListener(self._dispatcher, 'vehicle_streamed_in')
 
     def vehicle_stream_outs(self) -> _StreamListener:
         """Async generator yielding VehicleStreamOut."""
-        return _StreamListener(self._dispatcher, "vehicle_streamed_out")
+        return _StreamListener(self._dispatcher, 'vehicle_streamed_out')
 
     def player_deaths(self) -> _StreamListener:
         """Async generator yielding PlayerDeath."""
-        return _StreamListener(self._dispatcher, "player_death")
+        return _StreamListener(self._dispatcher, 'player_death')
 
     # ── Wait-for helpers ───────────────────────────────────────────────────────
 
@@ -975,7 +976,7 @@ class SAMPBot:
         async for _, data in self.rpcs(rpc_id):
             if predicate is None or predicate(rpc_id, data):
                 return data
-        raise AssertionError("unreachable: stream ended without match")
+        raise AssertionError('unreachable: stream ended without match')
 
     async def wait_for_dialog[
         D: (
@@ -994,12 +995,10 @@ class SAMPBot:
         dialog_id: int | None = None,
     ) -> D:
         """Await the next dialog matching all given filters."""
-        filt = _make_obj_filter(
-            predicate, {"dialog_id": dialog_id}, instance_of=dialog_type
-        )
-        async for dlg in _StreamListener(self._dispatcher, "dialog", filt):
+        filt = _make_obj_filter(predicate, {'dialog_id': dialog_id}, instance_of=dialog_type)
+        async for dlg in _StreamListener(self._dispatcher, 'dialog', filt):
             return dlg  # type: ignore[return-value]
-        raise AssertionError("unreachable: stream ended without match")
+        raise AssertionError('unreachable: stream ended without match')
 
     async def wait_for_chat(
         self,
@@ -1008,10 +1007,10 @@ class SAMPBot:
         player_id: int | None = None,
     ) -> ChatMessage:
         """Await the next public chat message matching all given filters."""
-        filt = _make_obj_filter(predicate, {"player_id": player_id})
-        async for msg in _StreamListener(self._dispatcher, "chat", filt):
+        filt = _make_obj_filter(predicate, {'player_id': player_id})
+        async for msg in _StreamListener(self._dispatcher, 'chat', filt):
             return msg
-        raise AssertionError("unreachable: stream ended without match")
+        raise AssertionError('unreachable: stream ended without match')
 
     async def wait_for_client_message(
         self,
@@ -1020,10 +1019,10 @@ class SAMPBot:
         color: int | None = None,
     ) -> ServerMessage:
         """Await the next server message matching all given filters."""
-        filt = _make_obj_filter(predicate, {"color": color})
-        async for msg in _StreamListener(self._dispatcher, "client_message", filt):
+        filt = _make_obj_filter(predicate, {'color': color})
+        async for msg in _StreamListener(self._dispatcher, 'client_message', filt):
             return msg
-        raise AssertionError("unreachable: stream ended without match")
+        raise AssertionError('unreachable: stream ended without match')
 
     async def wait_for_player_join(
         self,
@@ -1033,23 +1032,21 @@ class SAMPBot:
         name: str | None = None,
     ) -> PlayerJoin:
         """Await the next player join matching all given filters."""
-        filt = _make_obj_filter(predicate, {"player_id": player_id, "name": name})
-        async for evt in _StreamListener(self._dispatcher, "player_join", filt):
+        filt = _make_obj_filter(predicate, {'player_id': player_id, 'name': name})
+        async for evt in _StreamListener(self._dispatcher, 'player_join', filt):
             return evt
-        raise AssertionError("unreachable: stream ended without match")
+        raise AssertionError('unreachable: stream ended without match')
 
     # ── Actions ────────────────────────────────────────────────────────────────
 
-    def send_rpc(
-        self, rpc_id: int, data: bytes = b"", reliability: int = RELIABLE
-    ) -> bool:
+    def send_rpc(self, rpc_id: int, data: bytes = b'', reliability: int = RELIABLE) -> bool:
         return self._actions.send_rpc(rpc_id, data, reliability)
 
     def send_chat(self, message: str) -> None:
         return self._actions.send_chat(message)
 
     def send_dialog_response(
-        self, dialog_id: int, button: int, list_item: int = 0, text: str = ""
+        self, dialog_id: int, button: int, list_item: int = 0, text: str = ''
     ) -> None:
         return self._actions.send_dialog_response(dialog_id, button, list_item, text)
 
@@ -1126,7 +1123,7 @@ class SAMPBot:
 
     # ── Post-middleware ────────────────────────────────────────────────────────
 
-    def add_post_middleware(self, fn: Callable, *, tag: str = "dialog") -> None:
+    def add_post_middleware(self, fn: Callable, *, tag: str = 'dialog') -> None:
         """Register *fn* as a post-middleware for events with *tag*.
 
         *fn* is called with the event object after **all** registered handlers
@@ -1141,7 +1138,7 @@ class SAMPBot:
         """
         self._dispatcher.add_post_middleware(tag, fn)
 
-    def post_middleware(self, fn: Callable | None = None, *, tag: str = "dialog"):
+    def post_middleware(self, fn: Callable | None = None, *, tag: str = 'dialog'):
         """Decorator that registers a post-middleware for *tag* events.
 
         Can be used with or without arguments::
@@ -1188,7 +1185,7 @@ class SAMPBot:
         from pyraksamp.shell._pty import _relay_client, make_pty_driver_class
 
         master_fd, slave_fd = pty.openpty()
-        path = path or f"/tmp/pyraksamp-{os.getpid()}.sock"
+        path = path or f'/tmp/pyraksamp-{os.getpid()}.sock'
 
         commands = CommandRegistry()
         _register_builtins(commands)
@@ -1202,7 +1199,9 @@ class SAMPBot:
         return server
 
     def _register_handler(
-        self, tag: str, fn: Callable,
+        self,
+        tag: str,
+        fn: Callable,
         predicate: Callable | None = None,
         extract: Callable | None = None,
     ) -> None:
@@ -1210,7 +1209,7 @@ class SAMPBot:
             _CallbackListener(self._dispatcher, tag, fn, predicate, extract)
         )
 
-    def include_router(self, router: "Router") -> None:
+    def include_router(self, router: 'Router') -> None:
         """Register all handlers from *router*, injecting this bot as first argument.
 
         Each handler in the router receives the bot as its first positional
@@ -1234,11 +1233,15 @@ SAMPClient = SAMPBot
 
 def _with_bot(bot: SAMPBot, fn: Callable) -> Callable:
     if inspect.iscoroutinefunction(fn):
+
         async def wrapped(*args, _fn=fn):
             return await _fn(bot, *args)
+
         return wrapped
+
     def wrapped(*args, _fn=fn):
         return _fn(bot, *args)
+
     return wrapped
 
 
@@ -1274,19 +1277,26 @@ class Router:
         self._specs: list[Callable[[SAMPBot], None]] = []
 
     def _store(
-        self, tag: str, fn: Callable,
+        self,
+        tag: str,
+        fn: Callable,
         predicate: Callable | None = None,
         extract: Callable | None = None,
     ) -> None:
         def replay(bot: SAMPBot) -> None:
             bot._register_handler(tag, _with_bot(bot, fn), predicate, extract)
+
         self._specs.append(replay)
 
     def _store_textdraw(
-        self, fn: Callable, filt: Callable | None, selectable: bool | None,
+        self,
+        fn: Callable,
+        filt: Callable | None,
+        selectable: bool | None,
     ) -> None:
         def replay(bot: SAMPBot) -> None:
             injected = _with_bot(bot, fn)
+
             async def textdraw_wrapper(td_id, *_args):
                 await asyncio.sleep(0)
                 td = bot.textdraws._registry.get(td_id)
@@ -1302,17 +1312,21 @@ class Router:
                     await injected(td)
                 else:
                     injected(td)
+
             bot._register_handler(
-                "textdraw_show", textdraw_wrapper, extract=lambda e: (e[1],),
+                'textdraw_show',
+                textdraw_wrapper,
+                extract=lambda e: (e[1],),
             )
+
         self._specs.append(replay)
 
     def on_connect[F: Callable](self, fn: F) -> F:
-        self._store("connect", fn, extract=_NO_ARG)
+        self._store('connect', fn, extract=_NO_ARG)
         return fn
 
     def on_disconnect[F: Callable](self, fn: F) -> F:
-        self._store("disconnect", fn, extract=_NO_ARG)
+        self._store('disconnect', fn, extract=_NO_ARG)
         return fn
 
     def on_rpc[F: Callable](
@@ -1330,7 +1344,8 @@ class Router:
                 )
 
             self._store(
-                "rpc", f,
+                'rpc',
+                f,
                 predicate=filt if (rpc_id is not None or predicate is not None) else None,
                 extract=lambda e: (e[1], e[2]),
             )
@@ -1347,9 +1362,10 @@ class Router:
         predicate: Callable[[PlayerJoin], bool] | None = None,
     ) -> F | Callable[[F], F]:
         def decorator(f: F) -> F:
-            filt = _make_obj_filter(predicate, {"player_id": player_id, "name": name})
-            self._store("player_join", f, filt)
+            filt = _make_obj_filter(predicate, {'player_id': player_id, 'name': name})
+            self._store('player_join', f, filt)
             return f
+
         return decorator(fn) if fn is not None else decorator
 
     def on_player_quit[F: Callable](
@@ -1360,9 +1376,10 @@ class Router:
         predicate: Callable[[PlayerQuit], bool] | None = None,
     ) -> F | Callable[[F], F]:
         def decorator(f: F) -> F:
-            filt = _make_obj_filter(predicate, {"player_id": player_id})
-            self._store("player_quit", f, filt)
+            filt = _make_obj_filter(predicate, {'player_id': player_id})
+            self._store('player_quit', f, filt)
             return f
+
         return decorator(fn) if fn is not None else decorator
 
     def on_chat[F: Callable](
@@ -1373,9 +1390,10 @@ class Router:
         predicate: Callable[[ChatMessage], bool] | None = None,
     ) -> F | Callable[[F], F]:
         def decorator(f: F) -> F:
-            filt = _make_obj_filter(predicate, {"player_id": player_id})
-            self._store("chat", f, filt)
+            filt = _make_obj_filter(predicate, {'player_id': player_id})
+            self._store('chat', f, filt)
             return f
+
         return decorator(fn) if fn is not None else decorator
 
     def on_client_message[F: Callable](
@@ -1386,9 +1404,10 @@ class Router:
         predicate: Callable[[ServerMessage], bool] | None = None,
     ) -> F | Callable[[F], F]:
         def decorator(f: F) -> F:
-            filt = _make_obj_filter(predicate, {"color": color})
-            self._store("client_message", f, filt)
+            filt = _make_obj_filter(predicate, {'color': color})
+            self._store('client_message', f, filt)
             return f
+
         return decorator(fn) if fn is not None else decorator
 
     @overload
@@ -1435,9 +1454,9 @@ class Router:
     ) -> Callable[[Any], Any]:
         def decorator(f: Callable[[Any], Any]) -> Callable[[Any], Any]:
             filt = _make_obj_filter(
-                predicate, {"dialog_id": dialog_id}, instance_of=dialog_type
+                predicate, {'dialog_id': dialog_id}, instance_of=dialog_type
             )
-            self._store("dialog", f, filt)
+            self._store('dialog', f, filt)
             return f
 
         if fn is not None:
@@ -1452,121 +1471,122 @@ class Router:
         predicate: Callable[[GameText], bool] | None = None,
     ) -> F | Callable[[F], F]:
         def decorator(f: F) -> F:
-            filt = _make_obj_filter(predicate, {"style": style})
-            self._store("game_text", f, filt)
+            filt = _make_obj_filter(predicate, {'style': style})
+            self._store('game_text', f, filt)
             return f
+
         return decorator(fn) if fn is not None else decorator
 
     def on_set_health[F: Callable](self, fn: F) -> F:
-        self._store("set_health", fn)
+        self._store('set_health', fn)
         return fn
 
     def on_set_armour[F: Callable](self, fn: F) -> F:
-        self._store("set_armour", fn)
+        self._store('set_armour', fn)
         return fn
 
     def on_set_position[F: Callable](self, fn: F) -> F:
-        self._store("set_position", fn)
+        self._store('set_position', fn)
         return fn
 
     def on_checkpoint[F: Callable](self, fn: F) -> F:
-        self._store("checkpoint", fn)
+        self._store('checkpoint', fn)
         return fn
 
     def on_checkpoint_disabled[F: Callable](self, fn: F) -> F:
-        self._store("checkpoint_disabled", fn, extract=_NO_ARG)
+        self._store('checkpoint_disabled', fn, extract=_NO_ARG)
         return fn
 
     def on_player_streamed_in[F: Callable](self, fn: F) -> F:
-        self._store("player_streamed_in", fn)
+        self._store('player_streamed_in', fn)
         return fn
 
     def on_player_streamed_out[F: Callable](self, fn: F) -> F:
-        self._store("player_streamed_out", fn)
+        self._store('player_streamed_out', fn)
         return fn
 
     def on_player_name[F: Callable](self, fn: F) -> F:
-        self._store("player_name", fn)
+        self._store('player_name', fn)
         return fn
 
     def on_toggle_controllable[F: Callable](self, fn: F) -> F:
-        self._store("toggle_controllable", fn)
+        self._store('toggle_controllable', fn)
         return fn
 
     def on_player_time[F: Callable](self, fn: F) -> F:
-        self._store("player_time", fn)
+        self._store('player_time', fn)
         return fn
 
     def on_death_message[F: Callable](self, fn: F) -> F:
-        self._store("death_message", fn)
+        self._store('death_message', fn)
         return fn
 
     def on_set_armed_weapon[F: Callable](self, fn: F) -> F:
-        self._store("set_armed_weapon", fn)
+        self._store('set_armed_weapon', fn)
         return fn
 
     def on_spawn_info[F: Callable](self, fn: F) -> F:
-        self._store("spawn_info", fn)
+        self._store('spawn_info', fn)
         return fn
 
     def on_player_team[F: Callable](self, fn: F) -> F:
-        self._store("player_team", fn)
+        self._store('player_team', fn)
         return fn
 
     def on_put_in_vehicle[F: Callable](self, fn: F) -> F:
-        self._store("put_in_vehicle", fn)
+        self._store('put_in_vehicle', fn)
         return fn
 
     def on_remove_from_vehicle[F: Callable](self, fn: F) -> F:
-        self._store("remove_from_vehicle", fn, extract=_NO_ARG)
+        self._store('remove_from_vehicle', fn, extract=_NO_ARG)
         return fn
 
     def on_player_color[F: Callable](self, fn: F) -> F:
-        self._store("player_color", fn)
+        self._store('player_color', fn)
         return fn
 
     def on_world_time[F: Callable](self, fn: F) -> F:
-        self._store("world_time", fn)
+        self._store('world_time', fn)
         return fn
 
     def on_toggle_spectating[F: Callable](self, fn: F) -> F:
-        self._store("toggle_spectating", fn)
+        self._store('toggle_spectating', fn)
         return fn
 
     def on_wanted_level[F: Callable](self, fn: F) -> F:
-        self._store("wanted_level", fn)
+        self._store('wanted_level', fn)
         return fn
 
     def on_weapon_ammo[F: Callable](self, fn: F) -> F:
-        self._store("weapon_ammo", fn)
+        self._store('weapon_ammo', fn)
         return fn
 
     def on_gravity[F: Callable](self, fn: F) -> F:
-        self._store("gravity", fn)
+        self._store('gravity', fn)
         return fn
 
     def on_weather[F: Callable](self, fn: F) -> F:
-        self._store("weather", fn)
+        self._store('weather', fn)
         return fn
 
     def on_player_skin[F: Callable](self, fn: F) -> F:
-        self._store("player_skin", fn)
+        self._store('player_skin', fn)
         return fn
 
     def on_set_interior[F: Callable](self, fn: F) -> F:
-        self._store("set_interior", fn)
+        self._store('set_interior', fn)
         return fn
 
     def on_vehicle_streamed_in[F: Callable](self, fn: F) -> F:
-        self._store("vehicle_streamed_in", fn)
+        self._store('vehicle_streamed_in', fn)
         return fn
 
     def on_vehicle_streamed_out[F: Callable](self, fn: F) -> F:
-        self._store("vehicle_streamed_out", fn)
+        self._store('vehicle_streamed_out', fn)
         return fn
 
     def on_player_death[F: Callable](self, fn: F) -> F:
-        self._store("player_death", fn)
+        self._store('player_death', fn)
         return fn
 
     def on_textdraw(
@@ -1578,7 +1598,7 @@ class Router:
         predicate: Callable[[TextDraw], bool] | None = None,
         selectable: bool | None = None,
     ):
-        filt = _make_obj_filter(predicate, {"id": id, "text": text})
+        filt = _make_obj_filter(predicate, {'id': id, 'text': text})
 
         def decorator(f):
             self._store_textdraw(f, filt, selectable)

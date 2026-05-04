@@ -10,19 +10,19 @@ if TYPE_CHECKING:
     from pyraksamp.colors import ColoredString
 
 __all__ = [
-    "AnyDialog",
-    "MsgboxDialog",
-    "InputDialog",
-    "PasswordDialog",
-    "ListDialog",
-    "TablistDialog",
-    "TablistHeadersDialog",
-    "Button",
-    "ButtonSelector",
-    "ListRow",
-    "TablistRow",
-    "RowSelector",
-    "DialogAlreadyRespondedError",
+    'AnyDialog',
+    'MsgboxDialog',
+    'InputDialog',
+    'PasswordDialog',
+    'ListDialog',
+    'TablistDialog',
+    'TablistHeadersDialog',
+    'Button',
+    'ButtonSelector',
+    'ListRow',
+    'TablistRow',
+    'RowSelector',
+    'DialogAlreadyRespondedError',
 ]
 
 
@@ -30,14 +30,14 @@ class DialogAlreadyRespondedError(Exception):
     """Raised when a dialog is responded to more than once."""
 
     def __init__(self, dialog_id: int) -> None:
-        super().__init__(f"dialog {dialog_id} has already been responded to")
+        super().__init__(f'dialog {dialog_id} has already been responded to')
         self.dialog_id = dialog_id
 
 
 class _Responder:
     """Tracks response state for a single dialog event."""
 
-    __slots__ = ("_fn", "_responded")
+    __slots__ = ('_fn', '_responded')
 
     def __init__(self, fn) -> None:
         self._fn = fn
@@ -74,7 +74,7 @@ class Button:
 class ButtonSelector:
     """Selector for dialog buttons. Positional: [0]=left/OK, [1]=right/Cancel."""
 
-    __slots__ = ("_buttons",)
+    __slots__ = ('_buttons',)
 
     def __init__(self, buttons: tuple[Button, ...]) -> None:
         self._buttons = buttons
@@ -93,7 +93,7 @@ class ButtonSelector:
         for b in self._buttons:
             if pred(b):
                 return b
-        raise ValueError("no button matches predicate")
+        raise ValueError('no button matches predicate')
 
     def __iter__(self) -> Iterator[Button]:
         return iter(self._buttons)
@@ -130,9 +130,7 @@ class ListRow:
 
     def select(self) -> None:
         """Send a selection response for this row."""
-        self._responder.send_dialog_response(
-            self._dialog_id, button=1, list_item=self.index
-        )
+        self._responder.send_dialog_response(self._dialog_id, button=1, list_item=self.index)
 
 
 @dataclass(slots=True, frozen=True)
@@ -146,9 +144,7 @@ class TablistRow:
 
     def select(self) -> None:
         """Send a selection response for this row."""
-        self._responder.send_dialog_response(
-            self._dialog_id, button=1, list_item=self.index
-        )
+        self._responder.send_dialog_response(self._dialog_id, button=1, list_item=self.index)
 
     def __getitem__(self, col: int) -> ColoredString:
         return self.columns[col]
@@ -160,7 +156,7 @@ class TablistRow:
 class RowSelector[R]:
     """Indexed and predicate-searchable collection of dialog rows."""
 
-    __slots__ = ("_rows",)
+    __slots__ = ('_rows',)
 
     def __init__(self, rows: list[R]) -> None:
         self._rows = rows
@@ -179,7 +175,7 @@ class RowSelector[R]:
         for r in self._rows:
             if pred(r):
                 return r
-        raise ValueError("no row matches predicate")
+        raise ValueError('no row matches predicate')
 
     def __iter__(self) -> Iterator[R]:
         return iter(self._rows)
@@ -234,7 +230,7 @@ class InputDialog:
     def is_responded(self) -> bool:
         return self._responder.is_responded
 
-    def submit(self, text: str = "") -> None:
+    def submit(self, text: str = '') -> None:
         """Send the OK response with the given text input."""
         self._responder.send_dialog_response(self.dialog_id, button=1, text=text)
 
@@ -260,7 +256,7 @@ class PasswordDialog:
     def is_responded(self) -> bool:
         return self._responder.is_responded
 
-    def submit(self, text: str = "") -> None:
+    def submit(self, text: str = '') -> None:
         """Send the OK response with the given password."""
         self._responder.send_dialog_response(self.dialog_id, button=1, text=text)
 
@@ -403,7 +399,7 @@ def _make_dialog(
                     _dialog_id=did,
                     _responder=responder,
                 )
-                for i, line in enumerate(ln for ln in body.split("\n") if ln)
+                for i, line in enumerate(ln for ln in body.split('\n') if ln)
             ]
         )
         return ListDialog(
@@ -418,12 +414,12 @@ def _make_dialog(
         rows_t: RowSelector[TablistRow] = RowSelector(
             [
                 TablistRow(
-                    columns=tuple(ColoredString(c) for c in line.split("\t")),
+                    columns=tuple(ColoredString(c) for c in line.split('\t')),
                     index=i,
                     _dialog_id=did,
                     _responder=responder,
                 )
-                for i, line in enumerate(ln for ln in body.split("\n") if ln)
+                for i, line in enumerate(ln for ln in body.split('\n') if ln)
             ]
         )
         return TablistDialog(
@@ -435,12 +431,12 @@ def _make_dialog(
             _responder=responder,
         )
     if style == 5:
-        lines = [ln for ln in body.split("\n") if ln]
-        headers = tuple(ColoredString(h) for h in lines[0].split("\t")) if lines else ()
+        lines = [ln for ln in body.split('\n') if ln]
+        headers = tuple(ColoredString(h) for h in lines[0].split('\t')) if lines else ()
         rows_th: RowSelector[TablistRow] = RowSelector(
             [
                 TablistRow(
-                    columns=tuple(ColoredString(c) for c in line.split("\t")),
+                    columns=tuple(ColoredString(c) for c in line.split('\t')),
                     index=i,
                     _dialog_id=did,
                     _responder=responder,

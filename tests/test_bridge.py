@@ -11,43 +11,43 @@ from pyraksamp.events import PlayerJoin
 
 # All 37 callback attribute names that _setup_bridge must assign.
 _ALL_CALLBACK_ATTRS = [
-    "on_connect",
-    "on_disconnect",
-    "on_rpc",
-    "on_player_join",
-    "on_player_quit",
-    "on_chat",
-    "on_client_message",
-    "on_dialog",
-    "on_game_text",
-    "on_set_health",
-    "on_set_armour",
-    "on_set_position",
-    "on_checkpoint",
-    "on_checkpoint_disabled",
-    "on_player_streamed_in",
-    "on_player_streamed_out",
-    "on_player_name",
-    "on_toggle_controllable",
-    "on_player_time",
-    "on_death_message",
-    "on_set_armed_weapon",
-    "on_spawn_info",
-    "on_player_team",
-    "on_put_in_vehicle",
-    "on_remove_from_vehicle",
-    "on_player_color",
-    "on_world_time",
-    "on_toggle_spectating",
-    "on_wanted_level",
-    "on_weapon_ammo",
-    "on_gravity",
-    "on_weather",
-    "on_player_skin",
-    "on_set_interior",
-    "on_vehicle_streamed_in",
-    "on_vehicle_streamed_out",
-    "on_player_death",
+    'on_connect',
+    'on_disconnect',
+    'on_rpc',
+    'on_player_join',
+    'on_player_quit',
+    'on_chat',
+    'on_client_message',
+    'on_dialog',
+    'on_game_text',
+    'on_set_health',
+    'on_set_armour',
+    'on_set_position',
+    'on_checkpoint',
+    'on_checkpoint_disabled',
+    'on_player_streamed_in',
+    'on_player_streamed_out',
+    'on_player_name',
+    'on_toggle_controllable',
+    'on_player_time',
+    'on_death_message',
+    'on_set_armed_weapon',
+    'on_spawn_info',
+    'on_player_team',
+    'on_put_in_vehicle',
+    'on_remove_from_vehicle',
+    'on_player_color',
+    'on_world_time',
+    'on_toggle_spectating',
+    'on_wanted_level',
+    'on_weapon_ammo',
+    'on_gravity',
+    'on_weather',
+    'on_player_skin',
+    'on_set_interior',
+    'on_vehicle_streamed_in',
+    'on_vehicle_streamed_out',
+    'on_player_death',
 ]
 
 
@@ -81,7 +81,7 @@ def setup():
 def test_assigns_all_callbacks():
     client, bus, mock_actions, loop_calls = setup()
     for attr in _ALL_CALLBACK_ATTRS:
-        assert callable(getattr(client, attr, None)), f"missing callback: {attr}"
+        assert callable(getattr(client, attr, None)), f'missing callback: {attr}'
 
 
 # ── on_connect ────────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ def test_on_connect_lambda_broadcasts():
         client.on_connect()
         loop_calls[0]()
 
-        assert q.get_nowait() == ("connect",)
+        assert q.get_nowait() == ('connect',)
 
     asyncio.run(_inner())
 
@@ -116,12 +116,12 @@ def test_on_player_join_constructs_event():
         q = asyncio.Queue()
         bus.subscribe(q)
 
-        client.on_player_join(42, "Alice")
+        client.on_player_join(42, 'Alice')
         loop_calls[0]()
 
         tag, evt = q.get_nowait()
-        assert tag == "player_join"
-        assert evt == PlayerJoin(player_id=42, name="Alice")
+        assert tag == 'player_join'
+        assert evt == PlayerJoin(player_id=42, name='Alice')
 
     asyncio.run(_inner())
 
@@ -135,11 +135,11 @@ def test_on_dialog_uses_make_dialog_factory():
         q = asyncio.Queue()
         bus.subscribe(q)
 
-        client.on_dialog(1, 1, b"Login", b"OK", b"Cancel", b"Enter name:")
+        client.on_dialog(1, 1, b'Login', b'OK', b'Cancel', b'Enter name:')
         loop_calls[0]()
 
         tag, dlg = q.get_nowait()
-        assert tag == "dialog"
+        assert tag == 'dialog'
         assert isinstance(dlg, InputDialog)
         assert dlg._responder._fn is mock_actions.send_dialog_response
 
@@ -155,10 +155,10 @@ def test_on_rpc_broadcasts_correct_tuple():
         q = asyncio.Queue()
         bus.subscribe(q)
 
-        client.on_rpc(55, b"\x01")
+        client.on_rpc(55, b'\x01')
         loop_calls[0]()
 
-        assert q.get_nowait() == ("rpc", 55, b"\x01")
+        assert q.get_nowait() == ('rpc', 55, b'\x01')
 
     asyncio.run(_inner())
 
@@ -195,7 +195,7 @@ def test_on_vehicle_streamed_in_siren_cast_to_bool():
         loop_calls[0]()
 
         tag, evt = q.get_nowait()
-        assert tag == "vehicle_streamed_in"
+        assert tag == 'vehicle_streamed_in'
         assert evt.add_siren is True
 
     asyncio.run(_inner())

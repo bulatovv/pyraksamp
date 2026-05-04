@@ -13,17 +13,15 @@ RELIABLE = _core.RELIABLE
 class _Actions:
     """Outbound game actions backed by _SAMPClient."""
 
-    def __init__(self, client: _SAMPClient, encoding: str = "utf-8") -> None:
+    def __init__(self, client: _SAMPClient, encoding: str = 'utf-8') -> None:
         self._client = client
         self._encoding = encoding
         self._key_refs: Counter[int] = Counter()  # bit → hold count
 
     def _enc(self, text: str, max_bytes: int) -> bytes:
-        return text.encode(self._encoding, errors="replace")[:max_bytes]
+        return text.encode(self._encoding, errors='replace')[:max_bytes]
 
-    def send_rpc(
-        self, rpc_id: int, data: bytes = b"", reliability: int = RELIABLE
-    ) -> bool:
+    def send_rpc(self, rpc_id: int, data: bytes = b'', reliability: int = RELIABLE) -> bool:
         """Send a raw RPC packet to the server.
 
         Parameters
@@ -40,15 +38,13 @@ class _Actions:
     def send_chat(self, message: str) -> None:
         """Send a public chat message (RPC 101)."""
         msg = self._enc(message, 144)
-        self.send_rpc(_core.RPC_CHAT, struct.pack("B", len(msg)) + msg)
+        self.send_rpc(_core.RPC_CHAT, struct.pack('B', len(msg)) + msg)
 
     def send_dialog_response(
-        self, dialog_id: int, button: int, list_item: int = 0, text: str = ""
+        self, dialog_id: int, button: int, list_item: int = 0, text: str = ''
     ) -> None:
         """Respond to a dialog (SendDialogResponse)."""
-        self._client.send_dialog_response(
-            dialog_id, button, list_item, self._enc(text, 255)
-        )
+        self._client.send_dialog_response(dialog_id, button, list_item, self._enc(text, 255))
 
     def send_death(self, weapon_id: int = 0, killer_id: int = 0xFFFF) -> None:
         """Send a death notification (SendDeathMessage)."""

@@ -16,38 +16,38 @@ import sys
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="pyraksamp shell",
-        description="pyraksamp interactive shell",
+        prog='pyraksamp shell',
+        description='pyraksamp interactive shell',
         add_help=True,
     )
     parser.add_argument(
-        "module_attr",
-        nargs="?",
-        metavar="module:attr",
-        help="Import a SAMPBot or Shell object (e.g. mymodule:bot)",
+        'module_attr',
+        nargs='?',
+        metavar='module:attr',
+        help='Import a SAMPBot or Shell object (e.g. mymodule:bot)',
     )
     parser.add_argument(
-        "--attach",
-        nargs="?",
+        '--attach',
+        nargs='?',
         const=True,
-        metavar="SOCK",
-        help="Attach to a running shell via Unix socket relay",
+        metavar='SOCK',
+        help='Attach to a running shell via Unix socket relay',
     )
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=7777)
-    parser.add_argument("--nick", default="PyBot")
-    parser.add_argument("--password", default="")
+    parser.add_argument('--host', default='127.0.0.1')
+    parser.add_argument('--port', type=int, default=7777)
+    parser.add_argument('--nick', default='PyBot')
+    parser.add_argument('--password', default='')
     parser.add_argument(
-        "--proxy",
+        '--proxy',
         default=None,
-        metavar="URL",
-        help="SOCKS5 proxy URL, e.g. socks5://user:pass@host:1080",
+        metavar='URL',
+        help='SOCKS5 proxy URL, e.g. socks5://user:pass@host:1080',
     )
     parser.add_argument(
-        "--encoding",
-        default="ascii",
-        metavar="ENC",
-        help="Server text encoding (default: ascii)",
+        '--encoding',
+        default='ascii',
+        metavar='ENC',
+        help='Server text encoding (default: ascii)',
     )
 
     args = parser.parse_args()
@@ -59,13 +59,11 @@ def main() -> None:
             # auto-detect: look for /tmp/pyraksamp-*.sock
             import glob as _glob
 
-            matches = sorted(_glob.glob("/tmp/pyraksamp-*.sock"))
+            matches = sorted(_glob.glob('/tmp/pyraksamp-*.sock'))
             if not matches:
-                sys.exit(
-                    "No pyraksamp socket found. Start a bot with expose_shell() first."
-                )
+                sys.exit('No pyraksamp socket found. Start a bot with expose_shell() first.')
             sock_path = matches[-1]
-            print(f"Attaching to {sock_path} ...", flush=True)
+            print(f'Attaching to {sock_path} ...', flush=True)
 
         from pyraksamp.shell._pty import attach
 
@@ -74,9 +72,9 @@ def main() -> None:
 
     if args.module_attr:
         # import mode: module:attr
-        if ":" not in args.module_attr:
-            parser.error("module:attr must contain a colon, e.g. mymodule:bot")
-        module_name, attr = args.module_attr.rsplit(":", 1)
+        if ':' not in args.module_attr:
+            parser.error('module:attr must contain a colon, e.g. mymodule:bot')
+        module_name, attr = args.module_attr.rsplit(':', 1)
         mod = importlib.import_module(module_name)
         obj = getattr(mod, attr)
 
@@ -88,9 +86,7 @@ def main() -> None:
         elif isinstance(obj, Shell):
             shell = obj
         else:
-            sys.exit(
-                f"Expected a SAMPBot or Shell instance, got {type(obj).__name__!r}"
-            )
+            sys.exit(f'Expected a SAMPBot or Shell instance, got {type(obj).__name__!r}')
 
         # bot.start() is handled by SampShellApp.on_mount when the bot is not
         # yet started; if already started, TUI attaches to ongoing events.

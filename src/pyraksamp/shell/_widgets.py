@@ -31,7 +31,7 @@ from pyraksamp.dialogs import (
     TablistHeadersDialog,
 )
 
-_SAMP_COLOR_RE = re.compile(r"\{[0-9A-Fa-f]{6}\}")
+_SAMP_COLOR_RE = re.compile(r'\{[0-9A-Fa-f]{6}\}')
 
 
 def _to_markup(text: str) -> str:
@@ -42,16 +42,16 @@ def _to_markup(text: str) -> str:
         parts = []
         for comp in text._components:
             if isinstance(comp, Color):
-                parts.append(f"[#{comp.value:06X}]")
+                parts.append(f'[#{comp.value:06X}]')
             else:
                 parts.append(escape(comp))
-        return "".join(parts)
+        return ''.join(parts)
     return escape(str(text))
 
 
 def _strip_colors(text: str) -> str:
     """Remove SA:MP inline color codes like {FFFFFF}."""
-    return _SAMP_COLOR_RE.sub("", text)
+    return _SAMP_COLOR_RE.sub('', text)
 
 
 if TYPE_CHECKING:
@@ -107,16 +107,16 @@ class _DialogButton(Static):
         self._disabled = value
         self.can_focus = not value
         if value:
-            self.add_class("disabled")
+            self.add_class('disabled')
         else:
-            self.remove_class("disabled")
+            self.remove_class('disabled')
 
     def on_click(self) -> None:
         if not self._disabled:
             self.post_message(self.Pressed(self))
 
     def on_key(self, event) -> None:
-        if event.key in ("enter", "space") and not self._disabled:
+        if event.key in ('enter', 'space') and not self._disabled:
             self.post_message(self.Pressed(self))
             event.prevent_default()
 
@@ -143,7 +143,7 @@ class LogLine(Static):
     LogLine.warning { color: ansi_yellow; }
     """
 
-    def __init__(self, text: str, *, style: str = "") -> None:
+    def __init__(self, text: str, *, style: str = '') -> None:
         super().__init__(_to_markup(text))
         if style:
             self.add_class(style)
@@ -168,16 +168,16 @@ class StatusBar(Static):
     armour: reactive[float] = reactive(0.0)
     pos: reactive[tuple] = reactive((0.0, 0.0, 0.0))
     players: reactive[int] = reactive(0)
-    connection_state: reactive[str] = reactive("connecting")  # connecting | connected
+    connection_state: reactive[str] = reactive('connecting')  # connecting | connected
 
     def render(self) -> str:
         x, y, z = self.pos
         parts = []
-        if self.connection_state == "connecting":
-            parts.append("[ansi_yellow]CONNECTING...[/]")
-        parts.append(f"POS: {x:.1f}, {y:.1f}, {z:.1f}")
-        parts.append(f"Players: {self.players}")
-        return "  |  ".join(f" {p}" if i == 0 else p for i, p in enumerate(parts))
+        if self.connection_state == 'connecting':
+            parts.append('[ansi_yellow]CONNECTING...[/]')
+        parts.append(f'POS: {x:.1f}, {y:.1f}, {z:.1f}')
+        parts.append(f'Players: {self.players}')
+        return '  |  '.join(f' {p}' if i == 0 else p for i, p in enumerate(parts))
 
 
 # ── ChatInput ─────────────────────────────────────────────────────────────────
@@ -193,11 +193,11 @@ class ChatInput(Input):
     """
 
     BINDINGS: ClassVar[list[Binding]] = [
-        Binding("enter", "submit", "Send", show=False),
-        Binding("shift+tab", "open_completion", "Complete", show=False),
-        Binding("tab", "cycle_completion", "Cycle", show=False),
-        Binding("up", "history_up", "History up", show=False),
-        Binding("down", "history_down", "History down", show=False),
+        Binding('enter', 'submit', 'Send', show=False),
+        Binding('shift+tab', 'open_completion', 'Complete', show=False),
+        Binding('tab', 'cycle_completion', 'Cycle', show=False),
+        Binding('up', 'history_up', 'History up', show=False),
+        Binding('down', 'history_down', 'History down', show=False),
     ]
 
     class ModeChanged(Message):
@@ -224,7 +224,7 @@ class ChatInput(Input):
 
     def __init__(self) -> None:
         super().__init__(
-            placeholder="type a message or :command or /samp_command", compact=True
+            placeholder='type a message or :command or /samp_command', compact=True
         )
         self.command_mode = False
         self.samp_mode = False
@@ -255,40 +255,40 @@ class ChatInput(Input):
     def on_key(self, event) -> None:
         # Completion intercepts (highest priority)
         if self.completion_active:
-            if event.key == "enter":
+            if event.key == 'enter':
                 event.prevent_default()
                 event.stop()
                 self.post_message(self.CompletionConfirmed())
                 return
-            if event.key == "escape":
+            if event.key == 'escape':
                 event.prevent_default()
                 event.stop()
                 self.post_message(self.CompletionDismissed())
                 return
 
         if not self.value and not (self.command_mode or self.samp_mode):
-            if event.character == ":":
+            if event.character == ':':
                 event.prevent_default()
                 self.command_mode = True
-                self.post_message(self.ModeChanged("command"))
-            elif event.character == "/":
+                self.post_message(self.ModeChanged('command'))
+            elif event.character == '/':
                 event.prevent_default()
                 self.samp_mode = True
-                self.post_message(self.ModeChanged("sampcmd"))
-        elif event.key == "backspace" and not self.value:
+                self.post_message(self.ModeChanged('sampcmd'))
+        elif event.key == 'backspace' and not self.value:
             if self.command_mode:
                 self.command_mode = False
-                self.post_message(self.ModeChanged("chat"))
+                self.post_message(self.ModeChanged('chat'))
             elif self.samp_mode:
                 self.samp_mode = False
-                self.post_message(self.ModeChanged("chat"))
+                self.post_message(self.ModeChanged('chat'))
 
     def clear(self) -> None:
         super().clear()
         if self.command_mode or self.samp_mode:
             self.command_mode = False
             self.samp_mode = False
-            self.post_message(self.ModeChanged("chat"))
+            self.post_message(self.ModeChanged('chat'))
 
 
 # ── DialogWidget ──────────────────────────────────────────────────────────────
@@ -410,34 +410,34 @@ class DialogWidget(Vertical):
 
     def compose(self) -> ComposeResult:
         dlg = self._dialog
-        body = getattr(dlg, "body", "")
-        btn1_label = _strip_colors(getattr(dlg, "button1", "") or "").strip()
-        btn2_label = _strip_colors(getattr(dlg, "button2", "") or "").strip()
+        body = getattr(dlg, 'body', '')
+        btn1_label = _strip_colors(getattr(dlg, 'button1', '') or '').strip()
+        btn2_label = _strip_colors(getattr(dlg, 'button2', '') or '').strip()
 
         if isinstance(dlg, MsgboxDialog):
             if body:
-                yield Label(_to_markup(body), classes="dialog-body")
+                yield Label(_to_markup(body), classes='dialog-body')
 
         elif isinstance(dlg, PasswordDialog):
             if body:
-                yield Label(_to_markup(body), classes="dialog-body")
+                yield Label(_to_markup(body), classes='dialog-body')
             self._input_widget = Input(password=True)
             yield self._input_widget
 
         elif isinstance(dlg, InputDialog):
             if body:
-                yield Label(_to_markup(body), classes="dialog-body")
+                yield Label(_to_markup(body), classes='dialog-body')
             self._input_widget = Input()
             yield self._input_widget
 
         elif isinstance(dlg, (ListDialog, TablistDialog, TablistHeadersDialog)):
             if isinstance(dlg, TablistHeadersDialog):
-                yield Static("", classes="datatable-header")
-            dt = DataTable(cursor_type="row", show_header=False)
+                yield Static('', classes='datatable-header')
+            dt = DataTable(cursor_type='row', show_header=False)
             self._list_widget = dt
             yield dt
 
-        with Horizontal(classes="dialog-buttons"):
+        with Horizontal(classes='dialog-buttons'):
             if btn1_label:
                 self._btn1 = _DialogButton(btn1_label)
                 yield self._btn1
@@ -448,34 +448,36 @@ class DialogWidget(Vertical):
     async def on_mount(self) -> None:
         dlg = self._dialog
 
-        title = _strip_colors(getattr(dlg, "title", "") or "").strip()
+        title = _strip_colors(getattr(dlg, 'title', '') or '').strip()
         self._base_title = title
-        self.border_title = f"📌 {title}" if title else "📌"
+        self.border_title = f'📌 {title}' if title else '📌'
 
         if isinstance(self._list_widget, DataTable):
             dt = self._list_widget
             if isinstance(dlg, ListDialog):
-                dt.add_column("", key="col0")
+                dt.add_column('', key='col0')
                 for row in dlg.rows:
                     dt.add_row(_to_markup(row.text))  # ty: ignore[invalid-argument-type]
             elif isinstance(dlg, TablistDialog):
                 if dlg.rows:
                     for i in range(len(dlg.rows[0].columns)):
-                        dt.add_column("", key=f"col{i}")
+                        dt.add_column('', key=f'col{i}')
                     for row in dlg.rows:
                         dt.add_row(*(_to_markup(c) for c in row.columns))  # ty: ignore[invalid-argument-type]
             elif isinstance(dlg, TablistHeadersDialog):
-                hdr = self.query_one(".datatable-header", Static)
+                hdr = self.query_one('.datatable-header', Static)
                 headers_plain = [_strip_colors(h) for h in dlg.headers]
                 col_widths = [len(h) for h in headers_plain]
                 for row in dlg.rows:
                     for i, col in enumerate(row.columns):
                         col_widths[i] = max(col_widths[i], len(_strip_colors(col)))
                 hdr.update(
-                    "".join(f" {h:<{w}} " for h, w in zip(headers_plain, col_widths, strict=True))
+                    ''.join(
+                        f' {h:<{w}} ' for h, w in zip(headers_plain, col_widths, strict=True)
+                    )
                 )
                 for i in range(len(dlg.headers)):
-                    dt.add_column("", key=f"col{i}")
+                    dt.add_column('', key=f'col{i}')
                 for row in dlg.rows:
                     dt.add_row(*(_to_markup(c) for c in row.columns))  # ty: ignore[invalid-argument-type]
 
@@ -483,25 +485,25 @@ class DialogWidget(Vertical):
         for btn in (self._btn1, self._btn2):
             if btn is not None:
                 if active:
-                    btn.add_class("active-dialog")
+                    btn.add_class('active-dialog')
                 else:
-                    btn.remove_class("active-dialog")
+                    btn.remove_class('active-dialog')
 
     def on_descendant_focus(self) -> None:
         if not self._dialog.is_responded:
-            self.add_class("active")
+            self.add_class('active')
             self._set_buttons_active(True)
 
     def on_descendant_blur(self) -> None:
         self.set_timer(0.05, self._check_active)
 
     def _check_active(self) -> None:
-        if not self.has_pseudo_class("focus-within"):
-            self.remove_class("active")
+        if not self.has_pseudo_class('focus-within'):
+            self.remove_class('active')
             self._set_buttons_active(False)
 
     def on_key(self, event) -> None:
-        if event.key == "escape" and not self._dialog.is_responded:
+        if event.key == 'escape' and not self._dialog.is_responded:
             event.prevent_default()
             event.stop()
             self._dialog.cancel()
@@ -514,7 +516,7 @@ class DialogWidget(Vertical):
             return
         dlg = self._dialog
         if isinstance(dlg, (InputDialog, PasswordDialog)):
-            text = self._input_widget.value if self._input_widget else ""
+            text = self._input_widget.value if self._input_widget else ''
             dlg.submit(text)
             self._mark_responded(return_focus=True)
 
@@ -538,11 +540,11 @@ class DialogWidget(Vertical):
         event.stop()
         if self._dialog.is_responded:
             return
-        focused = self.has_pseudo_class("focus-within")
+        focused = self.has_pseudo_class('focus-within')
         if event.button is self._btn1:
             dlg = self._dialog
             if isinstance(dlg, (InputDialog, PasswordDialog)):
-                text = self._input_widget.value if self._input_widget else ""
+                text = self._input_widget.value if self._input_widget else ''
                 dlg.submit(text)
             elif isinstance(dlg, (ListDialog, TablistDialog, TablistHeadersDialog)):
                 selected_idx = 0
@@ -566,8 +568,8 @@ class DialogWidget(Vertical):
             self._btn1.focus()
 
     def _mark_responded(self, *, return_focus: bool = False) -> None:
-        self.remove_class("active")
-        self.add_class("responded")
+        self.remove_class('active')
+        self.add_class('responded')
         self._set_buttons_active(False)
         self.border_title = self._base_title
         if self._btn1:
@@ -606,7 +608,7 @@ class DialogWidget(Vertical):
         # Call focus() synchronously before Textual's own focus redistribution
         # fires (triggered by can_focus=False on disabled elements).  Since
         # chat_input remains focusable, Textual's redistribution is a no-op.
-        self.app.set_hint("")
+        self.app.set_hint('')
         self.app._chat_input.focus()
 
     def mark_responded_externally(self) -> None:
@@ -646,13 +648,13 @@ class DialogGroupWidget(Vertical):
         self._nav_label: Label | None = None
 
     def compose(self) -> ComposeResult:
-        self._nav_label = Label("", classes="pane-nav")
+        self._nav_label = Label('', classes='pane-nav')
         yield self._nav_label
 
     async def add_dialog(self, dialog: AnyDialog) -> DialogWidget:
         """Add a dialog pane to this group and reset cascade timer."""
         prev_focused = (
-            self._panes[-1].has_pseudo_class("focus-within") if self._panes else False
+            self._panes[-1].has_pseudo_class('focus-within') if self._panes else False
         )
         pane = DialogWidget(dialog)
         self._panes.append(pane)
@@ -677,16 +679,16 @@ class DialogGroupWidget(Vertical):
             return
 
         if len(self._panes) <= 1:
-            self._nav_label.update("")
-            self.app.set_hint("")
+            self._nav_label.update('')
+            self.app.set_hint('')
         else:
             # Count stays local and bright
-            self._nav_label.update(f"Dialog {self._current + 1}/{len(self._panes)}")
+            self._nav_label.update(f'Dialog {self._current + 1}/{len(self._panes)}')
             # Only show hint if the group or its children are focused
-            if self.has_focus or self.has_pseudo_class("focus-within"):
-                self.app.set_hint("[Alt+←/→ to navigate]", dim=True)
+            if self.has_focus or self.has_pseudo_class('focus-within'):
+                self.app.set_hint('[Alt+←/→ to navigate]', dim=True)
             else:
-                self.app.set_hint("")
+                self.app.set_hint('')
 
     def on_descendant_focus(self) -> None:
         self._update_nav()
@@ -776,7 +778,7 @@ class EventLog(ScrollableContainer):
         if at_bottom:
             self._want_scroll = True
 
-    async def append_line(self, text: str, *, style: str = "") -> None:
+    async def append_line(self, text: str, *, style: str = '') -> None:
         """Append a plain text log entry.
 
         If there are any unresponded dialog groups, keep them pinned at the bottom
@@ -856,7 +858,7 @@ class TextdrawMenu(Static):
     """
 
     def __init__(self, bot) -> None:
-        super().__init__("")
+        super().__init__('')
         self._bot = bot
         self._items: list = []  # all TextDraw objects, selectable-first
         self._sel_count: int = 0  # how many leading items are selectable
@@ -895,22 +897,22 @@ class TextdrawMenu(Static):
         from textual.markup import escape
 
         if not self._items:
-            self.update("[dim](no textdraws)[/dim]")
+            self.update('[dim](no textdraws)[/dim]')
             return
 
         lines = []
         for i, td in enumerate(self._items):
             is_sel = i < self._sel_count
-            text = escape((td.text or "")[:60])
-            label = f"{td.id:>4}  {text}"
+            text = escape((td.text or '')[:60])
+            label = f'{td.id:>4}  {text}'
             if is_sel and i == self._cursor:
-                lines.append(f"[reverse] {label} [/reverse]")
+                lines.append(f'[reverse] {label} [/reverse]')
             elif is_sel:
-                lines.append(f" {label} ")
+                lines.append(f' {label} ')
             else:
-                lines.append(f"[dim] {label} [/dim]")
+                lines.append(f'[dim] {label} [/dim]')
 
-        self.update("\n".join(lines))
+        self.update('\n'.join(lines))
 
     async def _watch_changes(self) -> None:
         cond = self._bot.textdraws._condition
@@ -927,22 +929,22 @@ class TextdrawMenu(Static):
     def on_key(self, event) -> None:
         from pyraksamp.textdraws import SelectableTextDraw
 
-        if event.key == "up":
+        if event.key == 'up':
             if self._sel_count:
                 self._cursor = (self._cursor - 1) % self._sel_count
                 self._render()
             event.prevent_default()
-        elif event.key == "down":
+        elif event.key == 'down':
             if self._sel_count:
                 self._cursor = (self._cursor + 1) % self._sel_count
                 self._render()
             event.prevent_default()
-        elif event.key == "enter":
+        elif event.key == 'enter':
             if self._sel_count:
                 td = self._items[self._cursor]
                 if isinstance(td, SelectableTextDraw):
                     td.click()
             event.prevent_default()
-        elif event.key == "escape":
+        elif event.key == 'escape':
             self.post_message(self.Dismissed())
             event.prevent_default()

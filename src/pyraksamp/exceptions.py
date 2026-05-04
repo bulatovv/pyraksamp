@@ -1,16 +1,16 @@
 """SA:MP connection and protocol exception hierarchy."""
 
 __all__ = [
-    "SAMPConnectionError",
-    "SAMPBanned",
-    "SAMPInvalidPassword",
-    "SAMPServerFull",
-    "SAMPRejected",
-    "SAMPHandshakeTimeout",
-    "SAMPConnectionTimeout",
-    "SAMPHostResolutionError",
-    "SAMPProxyError",
-    "SAMPSocketError",
+    'SAMPConnectionError',
+    'SAMPBanned',
+    'SAMPInvalidPassword',
+    'SAMPServerFull',
+    'SAMPRejected',
+    'SAMPHandshakeTimeout',
+    'SAMPConnectionTimeout',
+    'SAMPHostResolutionError',
+    'SAMPProxyError',
+    'SAMPSocketError',
 ]
 
 

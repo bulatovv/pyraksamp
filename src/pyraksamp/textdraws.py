@@ -11,28 +11,28 @@ class TextDraw:
     """Mutable mirror of a single server textdraw. Updated in-place by show/edit."""
 
     __slots__ = (
-        "id",
-        "text",
-        "x",
-        "y",
-        "style",
-        "flags",
-        "letter_width",
-        "letter_height",
-        "letter_color",
-        "line_width",
-        "line_height",
-        "box_color",
-        "shadow",
-        "outline",
-        "background_color",
-        "model_id",
-        "rot_x",
-        "rot_y",
-        "rot_z",
-        "zoom",
-        "color1",
-        "color2",
+        'id',
+        'text',
+        'x',
+        'y',
+        'style',
+        'flags',
+        'letter_width',
+        'letter_height',
+        'letter_color',
+        'line_width',
+        'line_height',
+        'box_color',
+        'shadow',
+        'outline',
+        'background_color',
+        'model_id',
+        'rot_x',
+        'rot_y',
+        'rot_z',
+        'zoom',
+        'color1',
+        'color2',
     )
 
     def __init__(
@@ -135,13 +135,13 @@ class TextDraw:
         self.text = text
 
     def __repr__(self) -> str:
-        return f"TextDraw(id={self.id}, text={self.text!r})"
+        return f'TextDraw(id={self.id}, text={self.text!r})'
 
 
 class SelectableTextDraw(TextDraw):
     """A textdraw with selectable=1 — can be clicked."""
 
-    __slots__ = ("_click_fn",)
+    __slots__ = ('_click_fn',)
 
     _click_fn: Callable[[int], None]
 
@@ -150,7 +150,7 @@ class SelectableTextDraw(TextDraw):
         self._click_fn(self.id)
 
     def __repr__(self) -> str:
-        return f"SelectableTextDraw(id={self.id}, text={self.text!r})"
+        return f'SelectableTextDraw(id={self.id}, text={self.text!r})'
 
 
 def _make_textdraw(
@@ -249,9 +249,7 @@ class TextDraws:
     ) -> None:
         async with self._condition:
             existing = self._registry.get(td_id)
-            if existing is not None and isinstance(
-                existing, SelectableTextDraw
-            ) == bool(sel):
+            if existing is not None and isinstance(existing, SelectableTextDraw) == bool(sel):
                 existing._update(
                     flags,
                     lw,

@@ -13,7 +13,7 @@ from textual.widgets import Static
 class CompletionItem:
     insert: str  # text inserted into input on confirm
     label: str  # first column: name + metavar
-    description: str = field(default="")
+    description: str = field(default='')
 
 
 # ── CommandHistory ─────────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@ class CommandHistory:
     def __init__(self) -> None:
         self._entries: list[str] = []
         self._nav_pos: int | None = None  # None = at end (not navigating)
-        self._nav_saved: str = ""  # input captured when navigation started
+        self._nav_saved: str = ''  # input captured when navigation started
 
     def add(self, command: str) -> None:
         command = command.strip()
@@ -39,7 +39,7 @@ class CommandHistory:
         if len(self._entries) > self._MAX:
             self._entries.pop(0)
         self._nav_pos = None
-        self._nav_saved = ""
+        self._nav_saved = ''
 
     def navigate_up(self, current: str) -> str | None:
         """Go to older entry.  Saves *current* on first call.
@@ -58,18 +58,18 @@ class CommandHistory:
     def navigate_down(self) -> str:
         """Go to newer entry.  Returns saved input when stepping past the end."""
         if self._nav_pos is None:
-            return ""
+            return ''
         if self._nav_pos < len(self._entries) - 1:
             self._nav_pos += 1
             return self._entries[self._nav_pos]
         saved = self._nav_saved
         self._nav_pos = None
-        self._nav_saved = ""
+        self._nav_saved = ''
         return saved
 
     def navigate_reset(self) -> None:
         self._nav_pos = None
-        self._nav_saved = ""
+        self._nav_saved = ''
 
     def completions(self, prefix: str) -> list[str]:
         """Return entries that start with *prefix*, most recent first."""
@@ -100,7 +100,7 @@ class CompletionMenu(Static):
     """
 
     def __init__(self) -> None:
-        super().__init__("")
+        super().__init__('')
         self._items: list[CompletionItem] = []
         self._index: int = 0
 
@@ -143,9 +143,9 @@ class CompletionMenu(Static):
         col_w = max(len(item.label) for item in self._items)
         lines = []
         for i, item in enumerate(self._items):
-            label = f"{escape(item.label):<{col_w}}"
-            line = f"[reverse] {label} [/reverse]" if i == self._index else f" {label} "
+            label = f'{escape(item.label):<{col_w}}'
+            line = f'[reverse] {label} [/reverse]' if i == self._index else f' {label} '
             if item.description:
-                line += f"  [dim]{escape(item.description)}[/dim]"
+                line += f'  [dim]{escape(item.description)}[/dim]'
             lines.append(line)
-        self.update("\n".join(lines))
+        self.update('\n'.join(lines))

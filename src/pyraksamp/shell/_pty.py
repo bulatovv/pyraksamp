@@ -23,7 +23,7 @@ def make_pty_driver_class(slave_fd: int) -> type:
     class _PTYDriver(LinuxDriver):
         def __init__(self, app, **kwargs):
             super().__init__(app, **kwargs)
-            self._slave_file = open(slave_fd, "w", closefd=False)  # noqa: SIM115
+            self._slave_file = open(slave_fd, 'w', closefd=False)  # noqa: SIM115
             self._file = self._slave_file
             self.fileno = slave_fd
             self.input_tty = True
@@ -88,12 +88,12 @@ async def _relay_client(
                     size_bytes = await reader.readexactly(4)
                 except (asyncio.IncompleteReadError, ConnectionResetError):
                     break
-                cols, rows = struct.unpack("HH", size_bytes)
+                cols, rows = struct.unpack('HH', size_bytes)
                 with contextlib.suppress(OSError):
                     fcntl.ioctl(
                         master_fd,
                         termios.TIOCSWINSZ,
-                        struct.pack("HHHH", rows, cols, 0, 0),
+                        struct.pack('HHHH', rows, cols, 0, 0),
                     )
 
     try:
@@ -114,7 +114,7 @@ async def attach(sock_path: str) -> None:
 
     # Send initial terminal size
     cols, rows = os.get_terminal_size()
-    writer.write(b"\x01" + struct.pack("HH", cols, rows))
+    writer.write(b'\x01' + struct.pack('HH', cols, rows))
     await writer.drain()
 
     old_attrs = termios.tcgetattr(sys.stdin.fileno())
@@ -123,7 +123,7 @@ async def attach(sock_path: str) -> None:
     def on_resize(*_):
         try:
             cols, rows = os.get_terminal_size()
-            writer.write(b"\x01" + struct.pack("HH", cols, rows))
+            writer.write(b'\x01' + struct.pack('HH', cols, rows))
         except OSError:
             pass
 
@@ -154,7 +154,7 @@ async def attach(sock_path: str) -> None:
                     break
                 if not data:
                     break
-                writer.write(b"\x00" + data)
+                writer.write(b'\x00' + data)
                 await writer.drain()
 
         await asyncio.gather(sock_to_stdout(), stdin_to_sock())

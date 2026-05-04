@@ -23,8 +23,8 @@ def make_client():
 def test_send_rpc_delegates():
     client = make_client()
     actions = _Actions(client)
-    result = actions.send_rpc(42, b"\x01\x02", _core.RELIABLE)
-    client.send_rpc.assert_called_once_with(42, b"\x01\x02", _core.RELIABLE)
+    result = actions.send_rpc(42, b'\x01\x02', _core.RELIABLE)
+    client.send_rpc.assert_called_once_with(42, b'\x01\x02', _core.RELIABLE)
     assert result is True
 
 
@@ -41,7 +41,7 @@ def test_send_rpc_default_data():
     actions = _Actions(client)
     actions.send_rpc(7)
     _, data, _ = client.send_rpc.call_args.args
-    assert data == b""
+    assert data == b''
 
 
 # ── send_chat ─────────────────────────────────────────────────────────────────
@@ -50,16 +50,16 @@ def test_send_rpc_default_data():
 def test_send_chat_encodes():
     client = make_client()
     actions = _Actions(client)
-    actions.send_chat("hello")
-    msg = b"hello"
-    expected = struct.pack("B", 5) + msg
+    actions.send_chat('hello')
+    msg = b'hello'
+    expected = struct.pack('B', 5) + msg
     client.send_rpc.assert_called_once_with(_core.RPC_CHAT, expected, _core.RELIABLE)
 
 
 def test_send_chat_truncates_to_144():
     client = make_client()
     actions = _Actions(client)
-    long_msg = "x" * 200
+    long_msg = 'x' * 200
     actions.send_chat(long_msg)
     _, payload, _ = client.send_rpc.call_args.args
     length = payload[0]
@@ -71,19 +71,19 @@ def test_send_chat_truncates_to_144():
 def test_send_chat_encodes_utf8_by_default():
     client = make_client()
     actions = _Actions(client)
-    actions.send_chat("caf\u00e9")  # é → UTF-8 \xc3\xa9
+    actions.send_chat('caf\u00e9')  # é → UTF-8 \xc3\xa9
     _, payload, _ = client.send_rpc.call_args.args
     body = payload[1:]
-    assert body == "caf\u00e9".encode("utf-8")
+    assert body == 'caf\u00e9'.encode('utf-8')
 
 
 def test_send_chat_uses_server_encoding():
     client = make_client()
-    actions = _Actions(client, encoding="ascii")
-    actions.send_chat("caf\u00e9")  # é → ? with ascii+replace
+    actions = _Actions(client, encoding='ascii')
+    actions.send_chat('caf\u00e9')  # é → ? with ascii+replace
     _, payload, _ = client.send_rpc.call_args.args
     body = payload[1:]
-    assert body == b"caf?"
+    assert body == b'caf?'
 
 
 # ── send_dialog_response ──────────────────────────────────────────────────────
@@ -92,15 +92,15 @@ def test_send_chat_uses_server_encoding():
 def test_send_dialog_response():
     client = make_client()
     actions = _Actions(client)
-    actions.send_dialog_response(5, 1, 2, "text")
-    client.send_dialog_response.assert_called_once_with(5, 1, 2, b"text")
+    actions.send_dialog_response(5, 1, 2, 'text')
+    client.send_dialog_response.assert_called_once_with(5, 1, 2, b'text')
 
 
 def test_send_dialog_response_defaults():
     client = make_client()
     actions = _Actions(client)
     actions.send_dialog_response(5, 0)
-    client.send_dialog_response.assert_called_once_with(5, 0, 0, b"")
+    client.send_dialog_response.assert_called_once_with(5, 0, 0, b'')
 
 
 # ── send_death ────────────────────────────────────────────────────────────────
@@ -147,8 +147,8 @@ def test_send_exit_vehicle():
 def test_send_command():
     client = make_client()
     actions = _Actions(client)
-    actions.send_command("/stats")
-    client.send_command.assert_called_once_with(b"/stats")
+    actions.send_command('/stats')
+    client.send_command.assert_called_once_with(b'/stats')
 
 
 # ── send_keys (low-level) ──────────────────────────────────────────────────────

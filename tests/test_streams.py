@@ -26,8 +26,8 @@ def _make_dispatcher(bus):
 
 def test_rpcs_yields_rpc_events():
     async def _inner():
-        with patch("pyraksamp._SAMPClient"):
-            bot = SAMPBot("host")
+        with patch('pyraksamp._SAMPClient'):
+            bot = SAMPBot('host')
         results = []
 
         async def consume():
@@ -36,18 +36,18 @@ def test_rpcs_yields_rpc_events():
 
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)
-        bot._bus.broadcast(("rpc", 5, b"hi"))
-        bot._bus.broadcast(("disconnect",))
+        bot._bus.broadcast(('rpc', 5, b'hi'))
+        bot._bus.broadcast(('disconnect',))
         await task
-        assert results == [(5, b"hi")]
+        assert results == [(5, b'hi')]
 
     asyncio.run(_inner())
 
 
 def test_rpcs_filtered_by_id():
     async def _inner():
-        with patch("pyraksamp._SAMPClient"):
-            bot = SAMPBot("host")
+        with patch('pyraksamp._SAMPClient'):
+            bot = SAMPBot('host')
         results = []
 
         async def consume():
@@ -56,9 +56,9 @@ def test_rpcs_filtered_by_id():
 
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)
-        bot._bus.broadcast(("rpc", 5, b""))
-        bot._bus.broadcast(("rpc", 10, b"yes"))
-        bot._bus.broadcast(("disconnect",))
+        bot._bus.broadcast(('rpc', 5, b''))
+        bot._bus.broadcast(('rpc', 10, b'yes'))
+        bot._bus.broadcast(('disconnect',))
         await task
         assert results == [10]
 
@@ -67,8 +67,8 @@ def test_rpcs_filtered_by_id():
 
 def test_rpcs_stops_on_disconnect():
     async def _inner():
-        with patch("pyraksamp._SAMPClient"):
-            bot = SAMPBot("host")
+        with patch('pyraksamp._SAMPClient'):
+            bot = SAMPBot('host')
         count = 0
 
         async def consume():
@@ -78,7 +78,7 @@ def test_rpcs_stops_on_disconnect():
 
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)
-        bot._bus.broadcast(("disconnect",))
+        bot._bus.broadcast(('disconnect',))
         await task
         assert count == 0
 
@@ -90,8 +90,8 @@ def test_rpcs_stops_on_disconnect():
 
 def test_events_yields_all_event_tuples():
     async def _inner():
-        with patch("pyraksamp._SAMPClient"):
-            bot = SAMPBot("host")
+        with patch('pyraksamp._SAMPClient'):
+            bot = SAMPBot('host')
         results = []
 
         async def consume():
@@ -100,19 +100,19 @@ def test_events_yields_all_event_tuples():
 
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)
-        bot._bus.broadcast(("connect",))
-        bot._bus.broadcast(("rpc", 1, b""))
-        bot._bus.broadcast(("disconnect",))
+        bot._bus.broadcast(('connect',))
+        bot._bus.broadcast(('rpc', 1, b''))
+        bot._bus.broadcast(('disconnect',))
         await task
-        assert results == ["connect", "rpc", "disconnect"]
+        assert results == ['connect', 'rpc', 'disconnect']
 
     asyncio.run(_inner())
 
 
 def test_events_stops_after_disconnect():
     async def _inner():
-        with patch("pyraksamp._SAMPClient"):
-            bot = SAMPBot("host")
+        with patch('pyraksamp._SAMPClient'):
+            bot = SAMPBot('host')
         results = []
 
         async def consume():
@@ -121,10 +121,10 @@ def test_events_stops_after_disconnect():
 
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)
-        bot._bus.broadcast(("disconnect",))
-        bot._bus.broadcast(("connect",))  # must NOT be received
+        bot._bus.broadcast(('disconnect',))
+        bot._bus.broadcast(('connect',))  # must NOT be received
         await task
-        assert results == ["disconnect"]
+        assert results == ['disconnect']
 
     asyncio.run(_inner())
 
@@ -139,14 +139,14 @@ def test_chat_yields_chat_messages():
         results = []
 
         async def consume():
-            async for msg in _StreamListener(d, "chat"):
+            async for msg in _StreamListener(d, 'chat'):
                 results.append(msg)
 
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)
-        msg = ChatMessage(player_id=3, raw=b"hello", text="hello")
-        bus.broadcast(("chat", msg))
-        bus.broadcast(("disconnect",))
+        msg = ChatMessage(player_id=3, raw=b'hello', text='hello')
+        bus.broadcast(('chat', msg))
+        bus.broadcast(('disconnect',))
         await task
         assert results == [msg]
 
@@ -160,14 +160,14 @@ def test_typed_stream_skips_other_tags():
         results = []
 
         async def consume():
-            async for msg in _StreamListener(d, "chat"):
+            async for msg in _StreamListener(d, 'chat'):
                 results.append(msg)
 
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)
-        bus.broadcast(("rpc", 1, b""))
-        bus.broadcast(("chat", ChatMessage(player_id=1, raw=b"hi", text="hi")))
-        bus.broadcast(("disconnect",))
+        bus.broadcast(('rpc', 1, b''))
+        bus.broadcast(('chat', ChatMessage(player_id=1, raw=b'hi', text='hi')))
+        bus.broadcast(('disconnect',))
         await task
         assert len(results) == 1
 
@@ -181,15 +181,15 @@ def test_fan_out_two_consumers_both_receive():
         a, b = [], []
 
         async def consume(out):
-            async for msg in _StreamListener(d, "chat"):
+            async for msg in _StreamListener(d, 'chat'):
                 out.append(msg)
 
         ta = asyncio.create_task(consume(a))
         tb = asyncio.create_task(consume(b))
         await asyncio.sleep(0)
-        msg = ChatMessage(player_id=1, raw=b"x", text="x")
-        bus.broadcast(("chat", msg))
-        bus.broadcast(("disconnect",))
+        msg = ChatMessage(player_id=1, raw=b'x', text='x')
+        bus.broadcast(('chat', msg))
+        bus.broadcast(('disconnect',))
         await ta
         await tb
         assert a == [msg] and b == [msg]
@@ -202,33 +202,33 @@ def test_fan_out_two_consumers_both_receive():
 
 def test_wait_for_rpc_returns_data():
     async def _inner():
-        with patch("pyraksamp._SAMPClient"):
-            bot = SAMPBot("host")
+        with patch('pyraksamp._SAMPClient'):
+            bot = SAMPBot('host')
 
         async def producer():
             await asyncio.sleep(0)
-            bot._bus.broadcast(("rpc", 20, b"\xde\xad"))
+            bot._bus.broadcast(('rpc', 20, b'\xde\xad'))
 
         asyncio.create_task(producer())
         data = await bot.wait_for_rpc(20)
-        assert data == b"\xde\xad"
+        assert data == b'\xde\xad'
 
     asyncio.run(_inner())
 
 
 def test_wait_for_rpc_predicate_skips_non_matching():
     async def _inner():
-        with patch("pyraksamp._SAMPClient"):
-            bot = SAMPBot("host")
+        with patch('pyraksamp._SAMPClient'):
+            bot = SAMPBot('host')
 
         async def producer():
             await asyncio.sleep(0)
-            bot._bus.broadcast(("rpc", 20, b"\x00"))
-            bot._bus.broadcast(("rpc", 20, b"\xff\xff"))
+            bot._bus.broadcast(('rpc', 20, b'\x00'))
+            bot._bus.broadcast(('rpc', 20, b'\xff\xff'))
 
         asyncio.create_task(producer())
         data = await bot.wait_for_rpc(20, predicate=lambda rid, d: len(d) == 2)
-        assert data == b"\xff\xff"
+        assert data == b'\xff\xff'
 
     asyncio.run(_inner())
 
@@ -238,20 +238,20 @@ def test_wait_for_rpc_predicate_skips_non_matching():
 
 def test_wait_for_dialog_type_filter():
     async def _inner():
-        with patch("pyraksamp._SAMPClient"):
-            bot = SAMPBot("host")
+        with patch('pyraksamp._SAMPClient'):
+            bot = SAMPBot('host')
         bot_mock = MagicMock()
         input_dlg = _make_dialog(
-            1, 1, "Login", "OK", "", "", _Responder(bot_mock.send_dialog_response)
+            1, 1, 'Login', 'OK', '', '', _Responder(bot_mock.send_dialog_response)
         )
         msgbox_dlg = _make_dialog(
-            2, 0, "Info", "OK", "", "body", _Responder(bot_mock.send_dialog_response)
+            2, 0, 'Info', 'OK', '', 'body', _Responder(bot_mock.send_dialog_response)
         )
 
         async def producer():
             await asyncio.sleep(0)
-            bot._bus.broadcast(("dialog", msgbox_dlg))
-            bot._bus.broadcast(("dialog", input_dlg))
+            bot._bus.broadcast(('dialog', msgbox_dlg))
+            bot._bus.broadcast(('dialog', input_dlg))
 
         asyncio.create_task(producer())
         result = await bot.wait_for_dialog(dialog_type=InputDialog)
@@ -265,19 +265,17 @@ def test_wait_for_dialog_type_filter():
 
 def test_wait_for_chat_player_id_filter():
     async def _inner():
-        with patch("pyraksamp._SAMPClient"):
-            bot = SAMPBot("host")
+        with patch('pyraksamp._SAMPClient'):
+            bot = SAMPBot('host')
 
         async def producer():
             await asyncio.sleep(0)
-            bot._bus.broadcast(("chat", ChatMessage(player_id=9, raw=b"no", text="no")))
-            bot._bus.broadcast(
-                ("chat", ChatMessage(player_id=3, raw=b"yes", text="yes"))
-            )
+            bot._bus.broadcast(('chat', ChatMessage(player_id=9, raw=b'no', text='no')))
+            bot._bus.broadcast(('chat', ChatMessage(player_id=3, raw=b'yes', text='yes')))
 
         asyncio.create_task(producer())
         msg = await bot.wait_for_chat(player_id=3)
-        assert msg.player_id == 3 and msg.text == "yes"
+        assert msg.player_id == 3 and msg.text == 'yes'
 
     asyncio.run(_inner())
 
@@ -287,21 +285,21 @@ def test_wait_for_chat_player_id_filter():
 
 def test_wait_for_client_message_color_filter():
     async def _inner():
-        with patch("pyraksamp._SAMPClient"):
-            bot = SAMPBot("host")
+        with patch('pyraksamp._SAMPClient'):
+            bot = SAMPBot('host')
 
         async def producer():
             await asyncio.sleep(0)
             bot._bus.broadcast(
                 (
-                    "client_message",
-                    ServerMessage(color=0x00FF00FF, raw=b"green", text="green"),
+                    'client_message',
+                    ServerMessage(color=0x00FF00FF, raw=b'green', text='green'),
                 )
             )
             bot._bus.broadcast(
                 (
-                    "client_message",
-                    ServerMessage(color=0xFF0000FF, raw=b"red", text="red"),
+                    'client_message',
+                    ServerMessage(color=0xFF0000FF, raw=b'red', text='red'),
                 )
             )
 
@@ -317,16 +315,16 @@ def test_wait_for_client_message_color_filter():
 
 def test_wait_for_player_join_name_filter():
     async def _inner():
-        with patch("pyraksamp._SAMPClient"):
-            bot = SAMPBot("host")
+        with patch('pyraksamp._SAMPClient'):
+            bot = SAMPBot('host')
 
         async def producer():
             await asyncio.sleep(0)
-            bot._bus.broadcast(("player_join", PlayerJoin(player_id=1, name="Bob")))
-            bot._bus.broadcast(("player_join", PlayerJoin(player_id=2, name="Alice")))
+            bot._bus.broadcast(('player_join', PlayerJoin(player_id=1, name='Bob')))
+            bot._bus.broadcast(('player_join', PlayerJoin(player_id=2, name='Alice')))
 
         asyncio.create_task(producer())
-        evt = await bot.wait_for_player_join(name="Alice")
-        assert evt.name == "Alice"
+        evt = await bot.wait_for_player_join(name='Alice')
+        assert evt.name == 'Alice'
 
     asyncio.run(_inner())

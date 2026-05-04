@@ -22,6 +22,7 @@ async def _wait_then_run(futures, event_obj, middlewares):
 _ExtractFn = Callable[[tuple], tuple]
 _PredicateFn = Callable[..., bool]
 
+
 class _Dispatcher:
     def __init__(self, bus) -> None:
         self._bus = bus
@@ -36,7 +37,10 @@ class _Dispatcher:
             self._task = asyncio.ensure_future(self._run())
 
     def register(
-        self, tag: str, predicate: _PredicateFn | None = None, extract: _ExtractFn | None = None,
+        self,
+        tag: str,
+        predicate: _PredicateFn | None = None,
+        extract: _ExtractFn | None = None,
     ) -> asyncio.Queue:
         if self._task is None:
             try:
@@ -60,7 +64,7 @@ class _Dispatcher:
         try:
             while True:
                 event = await self._q.get()
-                if event[0] == "disconnect":
+                if event[0] == 'disconnect':
                     for _t, _p, _ex, rq in self._routes:
                         rq.put_nowait(_STOP)
                     return

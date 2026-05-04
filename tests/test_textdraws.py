@@ -29,32 +29,32 @@ _SHOW_ARGS = dict(
     zoom=1.0,
     col1=-1,
     col2=-1,
-    text="Hello",
+    text='Hello',
 )
 
 # 21-element tuple: all show fields except selectable (passed separately)
 _SHOW_TUPLE = (
-    _SHOW_ARGS["flags"],
-    _SHOW_ARGS["lw"],
-    _SHOW_ARGS["lh"],
-    _SHOW_ARGS["lcol"],
-    _SHOW_ARGS["linew"],
-    _SHOW_ARGS["lineh"],
-    _SHOW_ARGS["bcol"],
-    _SHOW_ARGS["shadow"],
-    _SHOW_ARGS["outline"],
-    _SHOW_ARGS["bgcol"],
-    _SHOW_ARGS["style"],
-    _SHOW_ARGS["x"],
-    _SHOW_ARGS["y"],
-    _SHOW_ARGS["model"],
-    _SHOW_ARGS["rx"],
-    _SHOW_ARGS["ry"],
-    _SHOW_ARGS["rz"],
-    _SHOW_ARGS["zoom"],
-    _SHOW_ARGS["col1"],
-    _SHOW_ARGS["col2"],
-    _SHOW_ARGS["text"],
+    _SHOW_ARGS['flags'],
+    _SHOW_ARGS['lw'],
+    _SHOW_ARGS['lh'],
+    _SHOW_ARGS['lcol'],
+    _SHOW_ARGS['linew'],
+    _SHOW_ARGS['lineh'],
+    _SHOW_ARGS['bcol'],
+    _SHOW_ARGS['shadow'],
+    _SHOW_ARGS['outline'],
+    _SHOW_ARGS['bgcol'],
+    _SHOW_ARGS['style'],
+    _SHOW_ARGS['x'],
+    _SHOW_ARGS['y'],
+    _SHOW_ARGS['model'],
+    _SHOW_ARGS['rx'],
+    _SHOW_ARGS['ry'],
+    _SHOW_ARGS['rz'],
+    _SHOW_ARGS['zoom'],
+    _SHOW_ARGS['col1'],
+    _SHOW_ARGS['col2'],
+    _SHOW_ARGS['text'],
 )
 
 
@@ -64,33 +64,33 @@ def make_textdraws():
     return tds, click_fn
 
 
-async def _show(tds: TextDraws, td_id: int, sel: int = 0, text: str = "Hello"):
+async def _show(tds: TextDraws, td_id: int, sel: int = 0, text: str = 'Hello'):
     args = _SHOW_ARGS.copy()
-    args["text"] = text
+    args['text'] = text
     await tds._on_show(
         td_id,
-        args["flags"],
-        args["lw"],
-        args["lh"],
-        args["lcol"],
-        args["linew"],
-        args["lineh"],
-        args["bcol"],
-        args["shadow"],
-        args["outline"],
-        args["bgcol"],
-        args["style"],
+        args['flags'],
+        args['lw'],
+        args['lh'],
+        args['lcol'],
+        args['linew'],
+        args['lineh'],
+        args['bcol'],
+        args['shadow'],
+        args['outline'],
+        args['bgcol'],
+        args['style'],
         sel,
-        args["x"],
-        args["y"],
-        args["model"],
-        args["rx"],
-        args["ry"],
-        args["rz"],
-        args["zoom"],
-        args["col1"],
-        args["col2"],
-        args["text"],
+        args['x'],
+        args['y'],
+        args['model'],
+        args['rx'],
+        args['ry'],
+        args['rz'],
+        args['zoom'],
+        args['col1'],
+        args['col2'],
+        args['text'],
     )
 
 
@@ -106,7 +106,7 @@ def test_make_textdraw_non_selectable():
     assert isinstance(td, TextDraw)
     assert not isinstance(td, SelectableTextDraw)
     assert td.id == 1
-    assert td.text == "Hello"
+    assert td.text == 'Hello'
     assert td.x == 100.0
 
 
@@ -126,8 +126,8 @@ def test_selectable_click_calls_fn():
 
 def test_update_text():
     td = _make_textdraw(1, *_SHOW_TUPLE, 0, None)
-    td._update_text("World")
-    assert td.text == "World"
+    td._update_text('World')
+    assert td.text == 'World'
 
 
 # ── TextDraws registry ────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ def test_show_adds_to_registry():
         tds, _ = make_textdraws()
         await _show(tds, 10)
         assert 10 in tds._registry
-        assert tds._registry[10].text == "Hello"
+        assert tds._registry[10].text == 'Hello'
 
     run(_test())
 
@@ -157,8 +157,8 @@ def test_edit_updates_text():
     async def _test():
         tds, _ = make_textdraws()
         await _show(tds, 10)
-        await tds._on_edit(10, "Updated")
-        assert tds._registry[10].text == "Updated"
+        await tds._on_edit(10, 'Updated')
+        assert tds._registry[10].text == 'Updated'
 
     run(_test())
 
@@ -166,7 +166,7 @@ def test_edit_updates_text():
 def test_edit_unknown_id_noop():
     async def _test():
         tds, _ = make_textdraws()
-        await tds._on_edit(999, "X")  # must not raise
+        await tds._on_edit(999, 'X')  # must not raise
 
     run(_test())
 
@@ -185,11 +185,11 @@ def test_disconnect_clears_registry():
 def test_show_updates_existing_same_type():
     async def _test():
         tds, _ = make_textdraws()
-        await _show(tds, 10, sel=0, text="A")
+        await _show(tds, 10, sel=0, text='A')
         td_ref = tds._registry[10]
-        await _show(tds, 10, sel=0, text="B")
+        await _show(tds, 10, sel=0, text='B')
         assert tds._registry[10] is td_ref
-        assert td_ref.text == "B"
+        assert td_ref.text == 'B'
 
     run(_test())
 
@@ -213,8 +213,8 @@ def test_show_replaces_if_selectability_changes():
 def test_find_returns_match():
     async def _test():
         tds, _ = make_textdraws()
-        await _show(tds, 1, text="Foo")
-        td = tds.find(lambda t: t.text == "Foo")
+        await _show(tds, 1, text='Foo')
+        td = tds.find(lambda t: t.text == 'Foo')
         assert td is not None
         assert td.id == 1
 
@@ -224,8 +224,8 @@ def test_find_returns_match():
 def test_find_returns_none_when_no_match():
     async def _test():
         tds, _ = make_textdraws()
-        await _show(tds, 1, text="Foo")
-        assert tds.find(lambda t: t.text == "Bar") is None
+        await _show(tds, 1, text='Foo')
+        assert tds.find(lambda t: t.text == 'Bar') is None
 
     run(_test())
 
@@ -306,10 +306,10 @@ def test_wait_until_gone():
 
 
 def test_click_textdraw_calls_action():
-    with patch("pyraksamp._SAMPClient"):
+    with patch('pyraksamp._SAMPClient'):
         from pyraksamp import SAMPBot
 
-        bot = SAMPBot("host")
+        bot = SAMPBot('host')
     bot._client.click_textdraw = MagicMock()
     bot.click_textdraw(77)
     bot._client.click_textdraw.assert_called_once_with(77)
@@ -319,28 +319,28 @@ def test_click_textdraw_calls_action():
 
 
 def _make_bot():
-    with patch("pyraksamp._SAMPClient"):
+    with patch('pyraksamp._SAMPClient'):
         from pyraksamp import SAMPBot
 
-        return SAMPBot("host")
+        return SAMPBot('host')
 
 
 def _wire_registry(bot):
     """Wire textdraw registry listeners (simulates what start() does)."""
     bot._dispatcher.start()
     for tag, fn in [
-        ("textdraw_show", bot.textdraws._on_show),
-        ("textdraw_hide", bot.textdraws._on_hide),
-        ("textdraw_edit", bot.textdraws._on_edit),
-        ("textdraw_toggle_select", bot.textdraws._on_toggle_select),
-        ("disconnect", bot.textdraws._on_disconnect),
+        ('textdraw_show', bot.textdraws._on_show),
+        ('textdraw_hide', bot.textdraws._on_hide),
+        ('textdraw_edit', bot.textdraws._on_edit),
+        ('textdraw_toggle_select', bot.textdraws._on_toggle_select),
+        ('disconnect', bot.textdraws._on_disconnect),
     ]:
         lst = _CallbackListener(bot._dispatcher, tag, fn, extract=lambda e: e[1:])
         bot._register_listener(lst)
         lst.start()
 
 
-def _broadcast_show(bot, td_id, text="Test", sel=0):
+def _broadcast_show(bot, td_id, text='Test', sel=0):
     args = (
         td_id,
         0,
@@ -366,7 +366,7 @@ def _broadcast_show(bot, td_id, text="Test", sel=0):
         -1,
         text,
     )
-    bot._bus.broadcast(("textdraw_show", *args))
+    bot._bus.broadcast(('textdraw_show', *args))
 
 
 def test_on_textdraw_fires_on_show():
@@ -383,12 +383,12 @@ def test_on_textdraw_fires_on_show():
         _wire_registry(bot)
         td_listener.start()
 
-        _broadcast_show(bot, 55, text="Test")
+        _broadcast_show(bot, 55, text='Test')
         await asyncio.sleep(0.05)
 
         assert len(received) == 1
         assert received[0].id == 55
-        assert received[0].text == "Test"
+        assert received[0].text == 'Test'
 
     run(_test())
 
@@ -398,7 +398,7 @@ def test_on_textdraw_predicate_filters():
         bot = _make_bot()
         received = []
 
-        @bot.on_textdraw(predicate=lambda td: td.text == "Match")
+        @bot.on_textdraw(predicate=lambda td: td.text == 'Match')
         def handler(td: TextDraw):
             received.append(td)
 
@@ -406,8 +406,8 @@ def test_on_textdraw_predicate_filters():
         _wire_registry(bot)
         td_listener.start()
 
-        _broadcast_show(bot, 1, text="NoMatch")
-        _broadcast_show(bot, 2, text="Match")
+        _broadcast_show(bot, 1, text='NoMatch')
+        _broadcast_show(bot, 2, text='Match')
         await asyncio.sleep(0.05)
 
         assert len(received) == 1
@@ -445,7 +445,7 @@ def test_on_textdraw_text_filter():
         bot = _make_bot()
         received = []
 
-        @bot.on_textdraw(text="OK")
+        @bot.on_textdraw(text='OK')
         def handler(td):
             received.append(td)
 
@@ -453,8 +453,8 @@ def test_on_textdraw_text_filter():
         _wire_registry(bot)
         td_listener.start()
 
-        _broadcast_show(bot, 1, text="Cancel")
-        _broadcast_show(bot, 2, text="OK")
+        _broadcast_show(bot, 1, text='Cancel')
+        _broadcast_show(bot, 2, text='OK')
         await asyncio.sleep(0.05)
 
         assert len(received) == 1
@@ -476,8 +476,8 @@ def test_on_textdraw_id_filter():
         _wire_registry(bot)
         td_listener.start()
 
-        _broadcast_show(bot, 10, text="A")
-        _broadcast_show(bot, 42, text="B")
+        _broadcast_show(bot, 10, text='A')
+        _broadcast_show(bot, 42, text='B')
         await asyncio.sleep(0.05)
 
         assert len(received) == 1

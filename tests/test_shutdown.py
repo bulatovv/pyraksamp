@@ -48,12 +48,12 @@ except KeyboardInterrupt:
 
 def test_background_thread_exits_cleanly_on_sigint():
     proc = subprocess.Popen(
-        [sys.executable, "-c", _SCRIPT],
+        [sys.executable, '-c', _SCRIPT],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
     # Block until the child confirms its thread is running — no arbitrary sleep.
-    assert proc.stdout.readline() == b"ready\n"
+    assert proc.stdout.readline() == b'ready\n'
 
     proc.send_signal(signal.SIGINT)
 
@@ -62,15 +62,14 @@ def test_background_thread_exits_cleanly_on_sigint():
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.communicate()
-        assert False, "subprocess did not exit within 5 s after SIGINT"
+        assert False, 'subprocess did not exit within 5 s after SIGINT'
 
-    assert b"Fatal Python error" not in stderr, (
-        f"CPython crash detected:\n{stderr.decode(errors='replace')}"
+    assert b'Fatal Python error' not in stderr, (
+        f'CPython crash detected:\n{stderr.decode(errors="replace")}'
     )
     # 0  – clean exit
     # 1  – unhandled KeyboardInterrupt (acceptable; not a crash)
     # 130 / -SIGINT – terminated by signal (shell convention / subprocess convention)
     assert proc.returncode in (0, 1, 130, -signal.SIGINT), (
-        f"Unexpected exit code {proc.returncode}; "
-        f"stderr:\n{stderr.decode(errors='replace')}"
+        f'Unexpected exit code {proc.returncode}; stderr:\n{stderr.decode(errors="replace")}'
     )
