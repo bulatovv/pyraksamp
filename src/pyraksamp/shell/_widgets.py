@@ -472,7 +472,7 @@ class DialogWidget(Vertical):
                     for i, col in enumerate(row.columns):
                         col_widths[i] = max(col_widths[i], len(_strip_colors(col)))
                 hdr.update(
-                    "".join(f" {h:<{w}} " for h, w in zip(headers_plain, col_widths))
+                    "".join(f" {h:<{w}} " for h, w in zip(headers_plain, col_widths, strict=True))
                 )
                 for i in range(len(dlg.headers)):
                     dt.add_column("", key=f"col{i}")

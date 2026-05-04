@@ -1,6 +1,7 @@
 """PTY driver subclass and relay server/client for remote shell attachment."""
 
 import asyncio
+import contextlib
 import fcntl
 import os
 import signal
@@ -22,7 +23,7 @@ def make_pty_driver_class(slave_fd: int) -> type:
     class _PTYDriver(LinuxDriver):
         def __init__(self, app, **kwargs):
             super().__init__(app, **kwargs)
-            self._slave_file = open(slave_fd, "w", closefd=False)
+            self._slave_file = open(slave_fd, "w", closefd=False)  # noqa: SIM115
             self._file = self._slave_file
             self.fileno = slave_fd
             self.input_tty = True
@@ -88,14 +89,12 @@ async def _relay_client(
                 except (asyncio.IncompleteReadError, ConnectionResetError):
                     break
                 cols, rows = struct.unpack("HH", size_bytes)
-                try:
+                with contextlib.suppress(OSError):
                     fcntl.ioctl(
                         master_fd,
                         termios.TIOCSWINSZ,
                         struct.pack("HHHH", rows, cols, 0, 0),
                     )
-                except OSError:
-                    pass
 
     try:
         await asyncio.gather(pty_to_sock(), sock_to_pty())

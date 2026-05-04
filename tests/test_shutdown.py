@@ -62,7 +62,7 @@ def test_background_thread_exits_cleanly_on_sigint():
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.communicate()
-        raise AssertionError("subprocess did not exit within 5 s after SIGINT")
+        assert False, "subprocess did not exit within 5 s after SIGINT"
 
     assert b"Fatal Python error" not in stderr, (
         f"CPython crash detected:\n{stderr.decode(errors='replace')}"

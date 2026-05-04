@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import shlex
 import traceback
@@ -52,10 +53,8 @@ class _ShellLogHandler(logging.Handler):
             "critical": "error",
         }
         style = style_map.get(level, "")
-        try:
+        with contextlib.suppress(Exception):
             asyncio.ensure_future(self._app._event_log.append_line(msg, style=style))
-        except Exception:
-            pass
 
 
 class SampShellApp(App):

@@ -1,6 +1,7 @@
 """Live textdraw registry — mirrors what the player currently sees."""
 
 from __future__ import annotations
+
 import asyncio
 from collections.abc import Callable
 from typing import Literal, overload

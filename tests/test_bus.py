@@ -1,6 +1,7 @@
 """Unit tests for _EventBus, _StreamListener, and _CallbackListener."""
 
 import asyncio
+import contextlib
 
 from pyraksamp._bus import _EventBus
 from pyraksamp._dispatcher import _Dispatcher
@@ -146,10 +147,8 @@ def test_stream_listener_unsubscribes_on_close():
         await asyncio.sleep(0)
         assert len(d._routes) == 1
         task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await task
-        except asyncio.CancelledError:
-            pass
         await asyncio.sleep(0)
         assert len(d._routes) == 0
 

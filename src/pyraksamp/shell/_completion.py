@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field
 
 from textual.markup import escape
@@ -32,10 +33,8 @@ class CommandHistory:
         command = command.strip()
         if not command:
             return
-        try:
+        with contextlib.suppress(ValueError):
             self._entries.remove(command)
-        except ValueError:
-            pass
         self._entries.append(command)
         if len(self._entries) > self._MAX:
             self._entries.pop(0)
@@ -145,10 +144,7 @@ class CompletionMenu(Static):
         lines = []
         for i, item in enumerate(self._items):
             label = f"{escape(item.label):<{col_w}}"
-            if i == self._index:
-                line = f"[reverse] {label} [/reverse]"
-            else:
-                line = f" {label} "
+            line = f"[reverse] {label} [/reverse]" if i == self._index else f" {label} "
             if item.description:
                 line += f"  [dim]{escape(item.description)}[/dim]"
             lines.append(line)
