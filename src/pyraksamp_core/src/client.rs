@@ -1351,10 +1351,10 @@ impl SampClient {
             id if id == ID_AUTH_KEY => {
                 self.handle_auth_key_raw(data);
             }
-            id if id == ID_CONNECTION_REQUEST_ACCEPTED => {
-                if !self.connected.load(Ordering::Relaxed) {
-                    self.handle_connection_accepted_raw(data);
-                }
+            id if id == ID_CONNECTION_REQUEST_ACCEPTED
+                && !self.connected.load(Ordering::Relaxed) =>
+            {
+                self.handle_connection_accepted_raw(data);
             }
             _ => {}
         }
