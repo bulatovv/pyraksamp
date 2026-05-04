@@ -1,5 +1,6 @@
 [![CI](https://github.com/bulatovv/pyraksamp/actions/workflows/ci.yml/badge.svg)](https://github.com/bulatovv/pyraksamp/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/pyraksamp)](https://pypi.org/project/pyraksamp/)
+[![Python](https://img.shields.io/pypi/pyversions/pyraksamp)](https://pypi.org/project/pyraksamp/)
 
 # pyraksamp
 
