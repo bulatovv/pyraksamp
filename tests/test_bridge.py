@@ -4,11 +4,10 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from pyraksamp._bus import _EventBus
 from pyraksamp._bridge import _setup_bridge
-from pyraksamp.dialogs import _make_dialog, _Responder, InputDialog
+from pyraksamp._bus import _EventBus
+from pyraksamp.dialogs import InputDialog, _make_dialog, _Responder
 from pyraksamp.events import PlayerJoin
-
 
 # All 37 callback attribute names that _setup_bridge must assign.
 _ALL_CALLBACK_ATTRS = [

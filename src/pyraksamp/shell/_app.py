@@ -8,11 +8,11 @@ import shlex
 import traceback
 from typing import TYPE_CHECKING, ClassVar
 
-from textual.app import App, ComposeResult
 from textual import on
+from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import Static, Rule, Label
 from textual.containers import Horizontal
+from textual.widgets import Label, Rule, Static
 
 from pyraksamp.dialogs import AnyDialog
 from pyraksamp.events import (
@@ -399,6 +399,7 @@ class SampShellApp(App):
                 if not name.startswith(prefix):
                     continue
                 cmd = self._commands.get(name)
+                assert cmd is not None
                 label = f"{name} {cmd.metavar}".rstrip() if cmd.metavar else name
                 items.append(
                     CompletionItem(insert=name, label=label, description=cmd.help)
@@ -438,7 +439,7 @@ class SampShellApp(App):
 
     # ── History navigation ─────────────────────────────────────────────────────
 
-    def _current_history(self) -> "CommandHistory":
+    def _current_history(self) -> CommandHistory:
         if self._chat_input.command_mode:
             return self._cmd_history
         if self._chat_input.samp_mode:

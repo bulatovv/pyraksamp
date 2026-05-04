@@ -1,3 +1,0 @@
-# Colors
-
-::: pyraksamp.colors

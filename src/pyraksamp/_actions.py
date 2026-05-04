@@ -4,8 +4,8 @@ import asyncio
 import struct
 from collections import Counter
 
-from pyraksamp._core import SAMPClient as _SAMPClient
 from pyraksamp import _core
+from pyraksamp._core import SAMPClient as _SAMPClient
 
 RELIABLE = _core.RELIABLE
 

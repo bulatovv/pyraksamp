@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import TYPE_CHECKING, ClassVar
 
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import (
@@ -17,10 +19,8 @@ from textual.widgets import (
     ListView,
     Static,
 )
-from textual.containers import Horizontal, ScrollableContainer, Vertical
 
-import re
-
+from pyraksamp.colors import Color, ColoredString
 from pyraksamp.dialogs import (
     AnyDialog,
     InputDialog,
@@ -30,8 +30,6 @@ from pyraksamp.dialogs import (
     TablistDialog,
     TablistHeadersDialog,
 )
-
-from pyraksamp.colors import Color, ColoredString
 
 _SAMP_COLOR_RE = re.compile(r"\{[0-9A-Fa-f]{6}\}")
 
@@ -67,7 +65,7 @@ class _DialogButton(Static):
     """Minimal focusable button for dialogs with full CSS control."""
 
     class Pressed(Message):
-        def __init__(self, button: "_DialogButton") -> None:
+        def __init__(self, button: _DialogButton) -> None:
             super().__init__()
             self.button = button
 
@@ -459,13 +457,13 @@ class DialogWidget(Vertical):
             if isinstance(dlg, ListDialog):
                 dt.add_column("", key="col0")
                 for row in dlg.rows:
-                    dt.add_row(_to_markup(row.text))
+                    dt.add_row(_to_markup(row.text))  # ty: ignore[invalid-argument-type]
             elif isinstance(dlg, TablistDialog):
                 if dlg.rows:
                     for i in range(len(dlg.rows[0].columns)):
                         dt.add_column("", key=f"col{i}")
                     for row in dlg.rows:
-                        dt.add_row(*(_to_markup(c) for c in row.columns))
+                        dt.add_row(*(_to_markup(c) for c in row.columns))  # ty: ignore[invalid-argument-type]
             elif isinstance(dlg, TablistHeadersDialog):
                 hdr = self.query_one(".datatable-header", Static)
                 headers_plain = [_strip_colors(h) for h in dlg.headers]
@@ -479,7 +477,7 @@ class DialogWidget(Vertical):
                 for i in range(len(dlg.headers)):
                     dt.add_column("", key=f"col{i}")
                 for row in dlg.rows:
-                    dt.add_row(*(_to_markup(c) for c in row.columns))
+                    dt.add_row(*(_to_markup(c) for c in row.columns))  # ty: ignore[invalid-argument-type]
 
     def _set_buttons_active(self, active: bool) -> None:
         for btn in (self._btn1, self._btn2):
@@ -577,7 +575,7 @@ class DialogWidget(Vertical):
         if self._btn2:
             self._btn2.disabled = True
         if self._input_widget:
-            self._input_widget.read_only = True
+            self._input_widget.read_only = True  # ty: ignore[invalid-assignment]
             self._input_widget.can_focus = False
         if self._list_widget is not None:
             self._list_widget.can_focus = False
@@ -893,7 +891,7 @@ class TextdrawMenu(Static):
             self._cursor = 0
         self._render()
 
-    def _render(self) -> None:
+    def _render(self) -> None:  # ty: ignore[invalid-method-override]
         from textual.markup import escape
 
         if not self._items:

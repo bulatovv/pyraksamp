@@ -13,3 +13,12 @@ reference
 src/pyraksamp_core/target/
 *.so
 site/
+
+# Generated API docs (except hand-maintained index.md and constants.md)
+docs/api/bot.md
+docs/api/colors.md
+docs/api/dialogs.md
+docs/api/events.md
+docs/api/exceptions.md
+docs/api/shell.md
+docs/api/textdraws.md

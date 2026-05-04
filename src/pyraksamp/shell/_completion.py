@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
 from textual.markup import escape
 from textual.widgets import Static
 

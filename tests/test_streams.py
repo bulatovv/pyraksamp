@@ -1,15 +1,14 @@
 """Tests for SAMPBot stream generators and wait_for_* helpers."""
 
 import asyncio
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from pyraksamp import SAMPBot
 from pyraksamp._bus import _EventBus
 from pyraksamp._dispatcher import _Dispatcher
 from pyraksamp._listener import _StreamListener
-from pyraksamp.dialogs import _make_dialog, _Responder, InputDialog
+from pyraksamp.dialogs import InputDialog, _make_dialog, _Responder
 from pyraksamp.events import ChatMessage, PlayerJoin, ServerMessage
-from unittest.mock import MagicMock
 
 
 def make_bus():

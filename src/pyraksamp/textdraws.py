@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import asyncio
+from collections.abc import Callable
 from typing import Literal, overload
 
 
@@ -140,6 +141,8 @@ class SelectableTextDraw(TextDraw):
     """A textdraw with selectable=1 — can be clicked."""
 
     __slots__ = ("_click_fn",)
+
+    _click_fn: Callable[[int], None]
 
     def click(self) -> None:
         """Send SelectTextDraw RPC (83) for this textdraw."""

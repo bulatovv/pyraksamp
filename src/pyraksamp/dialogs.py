@@ -157,18 +157,18 @@ class TablistRow:
         return iter(self.columns)
 
 
-class RowSelector[_R]:
+class RowSelector[R]:
     """Indexed and predicate-searchable collection of dialog rows."""
 
     __slots__ = ("_rows",)
 
-    def __init__(self, rows: list[_R]) -> None:
+    def __init__(self, rows: list[R]) -> None:
         self._rows = rows
 
-    def __getitem__(self, idx: int) -> _R:
+    def __getitem__(self, idx: int) -> R:
         return self._rows[idx]
 
-    def __call__(self, pred: Callable[[_R], bool]) -> _R:
+    def __call__(self, pred: Callable[[R], bool]) -> R:
         """Return the first row matching ``pred``.
 
         Raises
@@ -181,7 +181,7 @@ class RowSelector[_R]:
                 return r
         raise ValueError("no row matches predicate")
 
-    def __iter__(self) -> Iterator[_R]:
+    def __iter__(self) -> Iterator[R]:
         return iter(self._rows)
 
     def __len__(self) -> int:

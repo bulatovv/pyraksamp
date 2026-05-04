@@ -1,3 +1,0 @@
-# Textdraws
-
-::: pyraksamp.textdraws

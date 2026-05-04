@@ -1,13 +1,10 @@
 """Isolated unit tests for SAMPBot facade and gen_gpci."""
 
 import asyncio
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from pyraksamp import SAMPBot, SAMPClient, gen_gpci
-from pyraksamp import _core
+from pyraksamp import SAMPBot, SAMPClient, _core, gen_gpci
 from pyraksamp.dialogs import InputDialog, _make_dialog, _Responder
-from unittest.mock import MagicMock
-
 
 # ── gen_gpci ──────────────────────────────────────────────────────────────────
 

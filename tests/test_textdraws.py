@@ -3,10 +3,8 @@
 import asyncio
 from unittest.mock import MagicMock, patch
 
-
 from pyraksamp._listener import _CallbackListener
-from pyraksamp.textdraws import TextDraw, TextDraws, SelectableTextDraw, _make_textdraw
-
+from pyraksamp.textdraws import SelectableTextDraw, TextDraw, TextDraws, _make_textdraw
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

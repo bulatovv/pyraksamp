@@ -176,3 +176,18 @@ Check first if needed:
 if not dlg.is_responded:
     dlg.buttons[0].click()
 ```
+
+---
+
+## Post-middleware: auto-dismiss unhandled dialogs
+
+Post-middleware runs **after all handlers** for a dialog have finished. This is useful for ensuring every dialog gets a response, even if no handler matched it:
+
+```python
+@bot.post_middleware(tag="dialog")
+async def auto_dismiss(dlg):
+    if not dlg.is_responded:
+        dlg.buttons[0].click()
+```
+
+You can't do this with a regular handler because you don't know whether another handler already responded — post-middleware fires once after all handlers are done.

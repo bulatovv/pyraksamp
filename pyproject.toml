@@ -33,13 +33,50 @@ cache-keys = [
 
 [dependency-groups]
 dev = [
+    "ruff>=0.15",
+    "ty>=0.0.34",
+    "pre-commit>=4.5",
+]
+test = [
     "pytest>=9.0.2",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=7.1",
 ]
 docs = [
+    "mkdocs>=1.6",
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.25",
+    "mkdocs-gen-files>=0.6",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 96
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "UP",
+    "B",
+    "I",
+    "SIM",
+]
+ignore = [
+    "E501",
+    "E402",
+    "E731",
+    "EM102",
+    "W191",
+    "E111",
+    "E114",
+    "E117",
+    "COM812",
+    "COM819",
+    "ISC002",
+]

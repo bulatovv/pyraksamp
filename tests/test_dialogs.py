@@ -7,17 +7,18 @@ from unittest.mock import MagicMock
 from pyraksamp import SAMPBot
 from pyraksamp._bus import _EventBus
 from pyraksamp._dispatcher import _Dispatcher
+from pyraksamp._listener import _CallbackListener
 from pyraksamp.dialogs import (
+    DialogAlreadyRespondedError,
+    InputDialog,
+    ListDialog,
+    MsgboxDialog,
+    PasswordDialog,
+    TablistDialog,
+    TablistHeadersDialog,
     _make_buttons,
     _make_dialog,
     _Responder,
-    MsgboxDialog,
-    InputDialog,
-    PasswordDialog,
-    ListDialog,
-    TablistDialog,
-    TablistHeadersDialog,
-    DialogAlreadyRespondedError,
 )
 
 
@@ -377,7 +378,11 @@ def _mock_self():
         if bot._started:
             listener.start()
 
+    def _register_handler(tag, fn, predicate=None, extract=None):
+        _register_listener(_CallbackListener(bot._dispatcher, tag, fn, predicate, extract))
+
     bot._register_listener = _register_listener
+    bot._register_handler = _register_handler
     return bot
 
 

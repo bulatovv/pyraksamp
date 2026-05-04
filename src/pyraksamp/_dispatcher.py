@@ -19,12 +19,15 @@ async def _wait_then_run(futures, event_obj, middlewares):
     await _run_post_middlewares(event_obj, middlewares)
 
 
+_ExtractFn = Callable[[tuple], tuple]
+_PredicateFn = Callable[..., bool]
+
 class _Dispatcher:
     def __init__(self, bus) -> None:
         self._bus = bus
         self._q: asyncio.Queue = asyncio.Queue()
         self._bus.subscribe(self._q)
-        self._routes: list[tuple[str, object, object, asyncio.Queue]] = []
+        self._routes: list[tuple[str, _PredicateFn | None, _ExtractFn, asyncio.Queue]] = []
         self._post_middlewares: list[tuple[str, Callable]] = []
         self._task: asyncio.Task | None = None
 
@@ -32,7 +35,9 @@ class _Dispatcher:
         if self._task is None:
             self._task = asyncio.ensure_future(self._run())
 
-    def register(self, tag: str, predicate=None, extract=None) -> asyncio.Queue:
+    def register(
+        self, tag: str, predicate: _PredicateFn | None = None, extract: _ExtractFn | None = None,
+    ) -> asyncio.Queue:
         if self._task is None:
             try:
                 loop = asyncio.get_running_loop()

@@ -2,7 +2,6 @@
 
 import asyncio
 import fcntl
-import io
 import os
 import signal
 import struct
@@ -23,7 +22,7 @@ def make_pty_driver_class(slave_fd: int) -> type:
     class _PTYDriver(LinuxDriver):
         def __init__(self, app, **kwargs):
             super().__init__(app, **kwargs)
-            self._slave_file = io.open(slave_fd, "w", closefd=False)
+            self._slave_file = open(slave_fd, "w", closefd=False)
             self._file = self._slave_file
             self.fileno = slave_fd
             self.input_tty = True
@@ -150,8 +149,7 @@ async def attach(sock_path: str) -> None:
                 try:
                     data = await loop.run_in_executor(
                         None,
-                        sys.stdin.buffer.read1,
-                        256,  # type: ignore[attr-defined]
+                        sys.stdin.buffer.read1,  # ty: ignore[unresolved-attribute]
                     )
                 except OSError:
                     break

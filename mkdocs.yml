@@ -35,12 +35,17 @@ nav:
     - Working with TextDraws: guides/textdraws.md
     - Actions: guides/actions.md
     - Interactive Shell: guides/shell.md
+    - Multi-File Organization: guides/multi-file.md
+    - Raw RPC: guides/raw-rpc.md
   - Recipes:
     - Overview: recipes/index.md
     - Chat Logger: recipes/chat-logger.md
     - Auto Register: recipes/auto-register.md
     - Command Bot: recipes/command-bot.md
     - Key Presser: recipes/key-presser.md
+    - PIN Pad: recipes/pin-pad.md
+    - Reconnect: recipes/reconnect.md
+    - Multi-Bot: recipes/multi-bot.md
   - Concepts:
     - Architecture: concepts/architecture.md
     - Connection Lifecycle: concepts/connection-lifecycle.md
@@ -54,6 +59,9 @@ nav:
     - Shell: api/shell.md
     - Constants: api/constants.md
     - Exceptions: api/exceptions.md
+
+hooks:
+  - docs/hooks/gen_api.py
 
 markdown_extensions:
   - admonition

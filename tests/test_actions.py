@@ -7,9 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from pyraksamp import Keys, _core
 from pyraksamp._actions import _Actions
-from pyraksamp import _core
-from pyraksamp import Keys
 
 
 def make_client():
