@@ -39,3 +39,11 @@ jobs:
       - run: uv run ruff check src/ tests/
 
       - run: uv run ty check src/
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - run: cargo fmt --manifest-path src/pyraksamp_core/Cargo.toml --check
+
+      - run: cargo clippy --manifest-path src/pyraksamp_core/Cargo.toml -- -D warnings
