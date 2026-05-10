@@ -1652,6 +1652,13 @@ impl SampClient {
                 }
                 self.process_packet_data(&pkt.data);
             }
+            // Flush ACKs immediately after every datagram.  With a correct ping
+            // measurement the server's ackTimeIncrement can be as low as 30ms
+            // (MIN_PING_TO_RESEND), so the previous 50ms periodic flush was too
+            // slow: the server would retransmit before our ACK arrived, and we
+            // would re-process reliable RPCs (e.g. RPC_INIT_GAME twice → double
+            // RPC_REQUEST_CLASS → spawn flow restart → apparent long delay).
+            self.flush_acks();
         }
     }
 
