@@ -2,9 +2,17 @@
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use std::{fmt, io};
+
+// RakNet::GetTime() returns ms elapsed since the first call (process-relative),
+// not since the UNIX epoch. We replicate that by anchoring to the first use.
+static RAKNET_EPOCH: OnceLock<Instant> = OnceLock::new();
+
+fn raknet_time_ms() -> u32 {
+    RAKNET_EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u32
+}
 
 use crate::socks5;
 
@@ -1342,10 +1350,9 @@ impl SampClient {
                 // Without the second timestamp the server silently rejects every pong,
                 // keeps ping=500ms, and uses a 1500ms retransmit timeout instead of
                 // the actual RTT*3 -- causing delayed delivery of reliable chat packets.
-                let now_ms = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u32;
+                // The second field must use the same epoch as RakNet::GetTime()
+                // (ms since first call, not UNIX epoch) so clockDifferential is valid.
+                let now_ms = raknet_time_ms();
                 let mut resp = BitStream::new();
                 resp.write_uint8(ID_CONNECTED_PONG);
                 resp.write_uint32_le(ts);
