@@ -1346,18 +1346,8 @@ impl SampClient {
                     return;
                 }
                 let ts = u32::from_le_bytes(data[1..5].try_into().unwrap());
-                // RakNet validates pong size as 1 + 2*sizeof(RakNetTime) = 9 bytes.
-                // Without the second timestamp the server silently rejects every pong,
-                // keeps ping=500ms, and uses a 1500ms retransmit timeout instead of
-                // the actual RTT*3 -- causing delayed delivery of reliable chat packets.
-                // The second field must use the same epoch as RakNet::GetTime()
-                // (ms since first call, not UNIX epoch) so clockDifferential is valid.
-                let now_ms = raknet_time_ms();
-                let mut resp = BitStream::new();
-                resp.write_uint8(ID_CONNECTED_PONG);
-                resp.write_uint32_le(ts);
-                resp.write_uint32_le(now_ms);
-                self.send_reliability_pkt(resp.as_bytes(), REL_UNRELIABLE, 0, 0);
+                let payload = build_pong_payload(ts);
+                self.send_reliability_pkt(&payload, REL_UNRELIABLE, 0, 0);
             }
             id if id == ID_DISCONNECTION_NOTIFICATION || id == ID_CONNECTION_LOST => {
                 self.connected.store(false, Ordering::Relaxed);
@@ -1742,6 +1732,22 @@ impl SampClient {
 
 // ── Network helpers ───────────────────────────────────────────────────────────
 
+// ── Protocol helpers ──────────────────────────────────────────────────────────
+
+// RakNet::HandleSocketReceiveFromConnectedPlayer checks:
+//   data[0] == ID_CONNECTED_PONG && byteSize == 1 + 2*sizeof(RakNetTime)
+// i.e. exactly 9 bytes.  Missing the second field causes the server to silently
+// discard every pong, keeping its ping estimate at 500 ms (clamped default) and
+// using a 1500 ms retransmit timeout instead of RTT*3.
+fn build_pong_payload(ping_ts: u32) -> Vec<u8> {
+    let now_ms = raknet_time_ms();
+    let mut bs = BitStream::new();
+    bs.write_uint8(ID_CONNECTED_PONG);
+    bs.write_uint32_le(ping_ts);
+    bs.write_uint32_le(now_ms);
+    bs.as_bytes().to_vec()
+}
+
 fn resolve_host(host: &str, port: u16) -> Option<Ipv4Addr> {
     let s = format!("{}:{}", host, port);
     for addr in s.to_socket_addrs().ok()? {
@@ -1936,5 +1942,75 @@ mod tests {
     fn test_keepalive_pkt_length() {
         let c = make_client();
         assert_eq!(c.build_keepalive_pkt().len(), 1 + 68);
+    }
+
+    // ── Pong format ───────────────────────────────────────────────────────────
+    // RakNet validates: data[0] == ID_CONNECTED_PONG && byteSize == 9
+    // (1 byte ID + 2 * sizeof(RakNetTime=u32)).  A wrong size causes the server
+    // to silently discard the pong and keep ping=500 ms (clamped default).
+
+    #[test]
+    fn pong_payload_is_nine_bytes() {
+        assert_eq!(build_pong_payload(0xDEAD_BEEF).len(), 9);
+    }
+
+    #[test]
+    fn pong_payload_starts_with_id_connected_pong() {
+        let p = build_pong_payload(0);
+        assert_eq!(p[0], ID_CONNECTED_PONG);
+    }
+
+    #[test]
+    fn pong_payload_echoes_ping_timestamp() {
+        let ts: u32 = 0x1234_5678;
+        let p = build_pong_payload(ts);
+        assert_eq!(&p[1..5], &ts.to_le_bytes(), "sendPingTime must be echoed");
+    }
+
+    #[test]
+    fn pong_sendpongtime_is_process_relative_not_unix_epoch() {
+        let p = build_pong_payload(0);
+        let send_pong_time = u32::from_le_bytes(p[5..9].try_into().unwrap());
+        // Process-relative ms should be tiny (< 1 hour) in any test run.
+        // UNIX epoch ms would be ~1_700_000_000, so this distinguishes the two.
+        assert!(
+            send_pong_time < 3_600_000,
+            "sendPongTime={send_pong_time} looks like UNIX epoch ms, not process-relative"
+        );
+    }
+
+    // ── Sync packet sizes and IDs ─────────────────────────────────────────────
+    // Sizes derived from the #pragma pack(1) structs in common.h.
+
+    #[test]
+    fn aim_sync_pkt_size_and_id() {
+        let c = make_client();
+        let p = c.build_aim_sync_pkt();
+        assert_eq!(p.len(), 1 + 31, "AIM_SYNC_DATA is 31 bytes");
+        assert_eq!(p[0], ID_AIM_SYNC);
+    }
+
+    #[test]
+    fn vehicle_pkt_size_and_id() {
+        let c = make_client();
+        let p = c.build_vehicle_pkt(1);
+        assert_eq!(p.len(), 1 + 63, "INCAR_SYNC_DATA is 63 bytes");
+        assert_eq!(p[0], ID_VEHICLE_SYNC);
+    }
+
+    #[test]
+    fn passenger_pkt_size_and_id() {
+        let c = make_client();
+        let p = c.build_passenger_pkt(1, 1);
+        assert_eq!(p.len(), 1 + 24, "PASSENGER_SYNC_DATA is 24 bytes");
+        assert_eq!(p[0], ID_PASSENGER_SYNC);
+    }
+
+    #[test]
+    fn spectator_pkt_size_and_id() {
+        let c = make_client();
+        let p = c.build_spectator_pkt();
+        assert_eq!(p.len(), 1 + 18, "SPECTATOR_SYNC_DATA is 18 bytes");
+        assert_eq!(p[0], ID_SPECTATOR_SYNC);
     }
 }
