@@ -1338,9 +1338,18 @@ impl SampClient {
                     return;
                 }
                 let ts = u32::from_le_bytes(data[1..5].try_into().unwrap());
+                // RakNet validates pong size as 1 + 2*sizeof(RakNetTime) = 9 bytes.
+                // Without the second timestamp the server silently rejects every pong,
+                // keeps ping=500ms, and uses a 1500ms retransmit timeout instead of
+                // the actual RTT*3 -- causing delayed delivery of reliable chat packets.
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u32;
                 let mut resp = BitStream::new();
                 resp.write_uint8(ID_CONNECTED_PONG);
                 resp.write_uint32_le(ts);
+                resp.write_uint32_le(now_ms);
                 self.send_reliability_pkt(resp.as_bytes(), REL_UNRELIABLE, 0, 0);
             }
             id if id == ID_DISCONNECTION_NOTIFICATION || id == ID_CONNECTION_LOST => {
