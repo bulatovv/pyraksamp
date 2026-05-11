@@ -244,6 +244,14 @@ impl PySAMPClient {
     fn player_id(&self) -> i32 {
         self.inner.player_id()
     }
+    #[getter]
+    fn health(&self) -> f32 {
+        self.inner.health()
+    }
+    #[getter]
+    fn armour(&self) -> f32 {
+        self.inner.armour()
+    }
 
     // ── Send helpers ──────────────────────────────────────────────────────────
 

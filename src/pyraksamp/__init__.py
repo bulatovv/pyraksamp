@@ -34,6 +34,7 @@ from typing import Any, overload
 from pyraksamp import _core
 from pyraksamp._actions import _Actions
 from pyraksamp._bridge import _setup_bridge
+from pyraksamp._world import Player, Vehicle
 from pyraksamp._bus import _EventBus
 from pyraksamp._core import SAMPClient as _SAMPClient
 from pyraksamp._dispatcher import _Dispatcher
@@ -109,6 +110,9 @@ __all__ = [
     # Client
     'SAMPBot',
     'Router',
+    # World state objects
+    'Player',
+    'Vehicle',
     # Key constants
     'Keys',
     # TextDraw types
@@ -416,6 +420,9 @@ class SAMPBot:
         self._listeners: list[_CallbackListener] = []
         self._started: bool = False
         self.textdraws = TextDraws(click_fn=self._actions.click_textdraw)
+        self.players: dict[int, Player] = {}
+        self.vehicles: dict[int, Vehicle] = {}
+        self._player_names: dict[int, str] = {}
 
     def _register_listener(self, listener: _CallbackListener) -> None:
         self._listeners.append(listener)
@@ -454,7 +461,16 @@ class SAMPBot:
             Could not bind the local UDP socket.
         """
         loop = asyncio.get_running_loop()
-        _setup_bridge(self._client, self._bus, self._make_dialog, loop, self._server_encoding)
+        _setup_bridge(
+            self._client,
+            self._bus,
+            self._make_dialog,
+            loop,
+            self._server_encoding,
+            players=self.players,
+            vehicles=self.vehicles,
+            player_names=self._player_names,
+        )
         self._dispatcher.start()
         # Feed textdraw events into the registry (must be registered before user listeners)
         for tag, fn in [
@@ -509,6 +525,16 @@ class SAMPBot:
     def player_id(self) -> int:
         """The bot's player ID assigned by the server, or -1 before connect."""
         return self._client.player_id
+
+    @property
+    def health(self) -> float:
+        """Bot's current health as sent by the server via SetPlayerHealth (float)."""
+        return self._client.health
+
+    @property
+    def armour(self) -> float:
+        """Bot's current armour as sent by the server via SetPlayerArmour (float)."""
+        return self._client.armour
 
     # ── Decorator listeners ────────────────────────────────────────────────────
 

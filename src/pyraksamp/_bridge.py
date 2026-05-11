@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Callable
 
+from pyraksamp._world import Player, Vehicle
 from pyraksamp.events import (
     ChatMessage,
     Checkpoint,
@@ -45,6 +46,10 @@ def _setup_bridge(
     make_dialog: Callable,
     loop: asyncio.AbstractEventLoop,
     encoding: str = 'utf-8',
+    *,
+    players: dict | None = None,
+    vehicles: dict | None = None,
+    player_names: dict | None = None,
 ) -> None:
     """Wire all _SAMPClient Rust callbacks to the asyncio event loop via _EventBus.
 
@@ -57,16 +62,30 @@ def _setup_bridge(
         loop.call_soon_threadsafe(lambda: bus.broadcast(('connect',)))
 
     def on_disconnect():
+        if players is not None:
+            players.clear()
+        if vehicles is not None:
+            vehicles.clear()
+        if player_names is not None:
+            player_names.clear()
         loop.call_soon_threadsafe(lambda: bus.broadcast(('disconnect',)))
 
     def on_rpc(rpc_id: int, data: bytes):
         loop.call_soon_threadsafe(lambda: bus.broadcast(('rpc', rpc_id, data)))
 
     def on_player_join(pid: int, name: str):
+        if player_names is not None:
+            player_names[pid] = name
+        if players is not None and pid in players:
+            players[pid].name = name
         evt = PlayerJoin(player_id=pid, name=name)
         loop.call_soon_threadsafe(lambda: bus.broadcast(('player_join', evt)))
 
     def on_player_quit(pid: int, reason: int):
+        if players is not None:
+            players.pop(pid, None)
+        if player_names is not None:
+            player_names.pop(pid, None)
         evt = PlayerQuit(player_id=pid, reason=reason)
         loop.call_soon_threadsafe(lambda: bus.broadcast(('player_quit', evt)))
 
@@ -140,6 +159,19 @@ def _setup_bridge(
         color: int,
         fs: int,
     ):
+        if players is not None:
+            players[pid] = Player(
+                player_id=pid,
+                name=player_names.get(pid) if player_names is not None else None,
+                team=team,
+                skin=skin,
+                x=x,
+                y=y,
+                z=z,
+                rotation=rot,
+                color=color,
+                fight_style=fs,
+            )
         evt = PlayerStreamIn(
             player_id=pid,
             team=team,
@@ -154,10 +186,16 @@ def _setup_bridge(
         loop.call_soon_threadsafe(lambda: bus.broadcast(('player_streamed_in', evt)))
 
     def on_player_streamed_out(pid: int):
+        if players is not None:
+            players.pop(pid, None)
         evt = PlayerStreamOut(player_id=pid)
         loop.call_soon_threadsafe(lambda: bus.broadcast(('player_streamed_out', evt)))
 
     def on_player_name(pid: int, name: str, success: int):
+        if success and player_names is not None:
+            player_names[pid] = name
+        if success and players is not None and pid in players:
+            players[pid].name = name
         evt = PlayerNameChange(player_id=pid, name=name, success=success)
         loop.call_soon_threadsafe(lambda: bus.broadcast(('player_name', evt)))
 
@@ -204,6 +242,8 @@ def _setup_bridge(
         loop.call_soon_threadsafe(lambda: bus.broadcast(('spawn_info', evt)))
 
     def on_player_team(pid: int, team: int):
+        if players is not None and pid in players:
+            players[pid].team = team
         evt = PlayerTeam(player_id=pid, team=team)
         loop.call_soon_threadsafe(lambda: bus.broadcast(('player_team', evt)))
 
@@ -215,6 +255,8 @@ def _setup_bridge(
         loop.call_soon_threadsafe(lambda: bus.broadcast(('remove_from_vehicle',)))
 
     def on_player_color(pid: int, color: int):
+        if players is not None and pid in players:
+            players[pid].color = color
         evt = PlayerColor(player_id=pid, color=color)
         loop.call_soon_threadsafe(lambda: bus.broadcast(('player_color', evt)))
 
@@ -243,6 +285,8 @@ def _setup_bridge(
         loop.call_soon_threadsafe(lambda: bus.broadcast(('weather', evt)))
 
     def on_player_skin(pid: int, skin_id: int):
+        if players is not None and pid in players:
+            players[pid].skin = skin_id
         evt = PlayerSkin(player_id=pid, skin_id=skin_id)
         loop.call_soon_threadsafe(lambda: bus.broadcast(('player_skin', evt)))
 
@@ -274,6 +318,27 @@ def _setup_bridge(
         body_color1: int,
         body_color2: int,
     ):
+        if vehicles is not None:
+            vehicles[vid] = Vehicle(
+                vehicle_id=vid,
+                model=model,
+                x=x,
+                y=y,
+                z=z,
+                angle=angle,
+                color1=color1,
+                color2=color2,
+                health=health,
+                interior=interior,
+                door_damage=door_dmg,
+                panel_damage=panel_dmg,
+                light_damage=light_dmg,
+                tire_damage=tire_dmg,
+                add_siren=bool(add_siren),
+                paintjob=paintjob,
+                body_color1=body_color1,
+                body_color2=body_color2,
+            )
         evt = VehicleStreamIn(
             vehicle_id=vid,
             model=model,
@@ -297,6 +362,8 @@ def _setup_bridge(
         loop.call_soon_threadsafe(lambda: bus.broadcast(('vehicle_streamed_in', evt)))
 
     def on_vehicle_streamed_out(vid: int):
+        if vehicles is not None:
+            vehicles.pop(vid, None)
         evt = VehicleStreamOut(vehicle_id=vid)
         loop.call_soon_threadsafe(lambda: bus.broadcast(('vehicle_streamed_out', evt)))
 

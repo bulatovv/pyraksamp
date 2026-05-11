@@ -373,8 +373,8 @@ pub struct SampClient {
     keys: AtomicU16,
     lr_analog: AtomicU16,
     ud_analog: AtomicU16,
-    health: AtomicU8,
-    armour: AtomicU8,
+    health: AtomicU32, // f32 bits; server sends float via RPC_SET_HEALTH
+    armour: AtomicU32, // f32 bits; server sends float via RPC_SET_ARMOUR
     weapon: AtomicU8,
     // facing angle in degrees, stored as f32 bits (fQuaternion[3] in ONFOOT_SYNC_DATA)
     rotation_raw: AtomicU32,
@@ -423,8 +423,8 @@ impl SampClient {
             keys: AtomicU16::new(0),
             lr_analog: AtomicU16::new(0),
             ud_analog: AtomicU16::new(0),
-            health: AtomicU8::new(100),
-            armour: AtomicU8::new(0),
+            health: AtomicU32::new(100.0f32.to_bits()),
+            armour: AtomicU32::new(0.0f32.to_bits()),
             weapon: AtomicU8::new(0),
             rotation_raw: AtomicU32::new(0),
             onfoot_rate_ms: AtomicU32::new(40),
@@ -442,6 +442,12 @@ impl SampClient {
     }
     pub fn player_id(&self) -> i32 {
         *self.player_id.lock().unwrap()
+    }
+    pub fn health(&self) -> f32 {
+        f32::from_bits(self.health.load(Ordering::Relaxed))
+    }
+    pub fn armour(&self) -> f32 {
+        f32::from_bits(self.armour.load(Ordering::Relaxed))
     }
 
     /// Extract `(socket, server_ipv4, relay_ipv4)` from the active `NetState`.
@@ -912,15 +918,13 @@ impl SampClient {
 
                 RPC_SET_HEALTH => {
                     let hp = bs.read_float_le().ok()?;
-                    self.health
-                        .store(hp.clamp(0.0, 255.0) as u8, Ordering::Relaxed);
+                    self.health.store(hp.to_bits(), Ordering::Relaxed);
                     fire!(self.callbacks, on_set_health, hp);
                 }
 
                 RPC_SET_ARMOUR => {
                     let arm = bs.read_float_le().ok()?;
-                    self.armour
-                        .store(arm.clamp(0.0, 255.0) as u8, Ordering::Relaxed);
+                    self.armour.store(arm.to_bits(), Ordering::Relaxed);
                     fire!(self.callbacks, on_set_armour, arm);
                 }
 
@@ -1390,8 +1394,8 @@ impl SampClient {
         let rot = f32::from_bits(self.rotation_raw.load(Ordering::Relaxed));
         pkt[1 + 30..1 + 34].copy_from_slice(&rot.to_le_bytes());
         // byteHealth at offset 34, byteArmour at 35, byteCurrentWeapon at 36
-        pkt[1 + 34] = self.health.load(Ordering::Relaxed);
-        pkt[1 + 35] = self.armour.load(Ordering::Relaxed);
+        pkt[1 + 34] = f32::from_bits(self.health.load(Ordering::Relaxed)) as u8;
+        pkt[1 + 35] = f32::from_bits(self.armour.load(Ordering::Relaxed)) as u8;
         pkt[1 + 36] = self.weapon.load(Ordering::Relaxed);
         // wSurfInfo at offset 62: 0 = not surfing on any vehicle
         pkt
@@ -1435,9 +1439,9 @@ impl SampClient {
         // fCarHealth at struct offset 48 → pkt[49..53]
         pkt[49..53].copy_from_slice(&1000.0f32.to_le_bytes());
         // bytePlayerHealth at struct offset 52 → pkt[53]
-        pkt[53] = self.health.load(Ordering::Relaxed);
+        pkt[53] = f32::from_bits(self.health.load(Ordering::Relaxed)) as u8;
         // bytePlayerArmour at struct offset 53 → pkt[54]
-        pkt[54] = self.armour.load(Ordering::Relaxed);
+        pkt[54] = f32::from_bits(self.armour.load(Ordering::Relaxed)) as u8;
         // byteCurrentWeapon at struct offset 54 → pkt[55]
         pkt[55] = self.weapon.load(Ordering::Relaxed);
         // TrailerID_or_ThrustAngle at struct offset 57 → pkt[58..60] — 0xFFFF = no trailer
@@ -1458,9 +1462,9 @@ impl SampClient {
         // byteCurrentWeapon at struct offset 3 → pkt[4]
         pkt[4] = self.weapon.load(Ordering::Relaxed);
         // bytePlayerHealth at struct offset 4 → pkt[5]
-        pkt[5] = self.health.load(Ordering::Relaxed);
+        pkt[5] = f32::from_bits(self.health.load(Ordering::Relaxed)) as u8;
         // bytePlayerArmour at struct offset 5 → pkt[6]
-        pkt[6] = self.armour.load(Ordering::Relaxed);
+        pkt[6] = f32::from_bits(self.armour.load(Ordering::Relaxed)) as u8;
         // lrAnalog at offset 7, udAnalog at offset 9, wKeys at offset 11
         pkt[7..9].copy_from_slice(&self.lr_analog.load(Ordering::Relaxed).to_le_bytes());
         pkt[9..11].copy_from_slice(&self.ud_analog.load(Ordering::Relaxed).to_le_bytes());
