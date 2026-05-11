@@ -1641,6 +1641,12 @@ impl SampClient {
                 continue;
             }
 
+            // Collect ACKs first, then flush, then process callbacks.
+            // Callbacks may block for tens of milliseconds (e.g. Textual TUI
+            // layout); with ackTimeIncrement as low as 90ms (MIN_PING*3) an
+            // ACK that arrives after callbacks would miss the retransmit window,
+            // causing the server to resend packets that we must then dedup.
+            // Sending ACKs before callbacks keeps us well within that window.
             for pkt in &result.packets {
                 // ACK all three reliable types — mirrors ReliabilityLayer.cpp:455:
                 // "if RELIABLE_SEQUENCED || RELIABLE_ORDERED || RELIABLE"
@@ -1650,15 +1656,11 @@ impl SampClient {
                 {
                     self.pending_acks.lock().unwrap().push(pkt.msg_num);
                 }
+            }
+            self.flush_acks();
+            for pkt in &result.packets {
                 self.process_packet_data(&pkt.data);
             }
-            // Flush ACKs immediately after every datagram.  With a correct ping
-            // measurement the server's ackTimeIncrement can be as low as 30ms
-            // (MIN_PING_TO_RESEND), so the previous 50ms periodic flush was too
-            // slow: the server would retransmit before our ACK arrived, and we
-            // would re-process reliable RPCs (e.g. RPC_INIT_GAME twice → double
-            // RPC_REQUEST_CLASS → spawn flow restart → apparent long delay).
-            self.flush_acks();
         }
     }
 

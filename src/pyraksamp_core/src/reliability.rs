@@ -54,6 +54,11 @@ struct SplitFragment {
 
 pub struct SplitBuffer {
     pending: HashMap<u16, SplitFragment>,
+    // Mirrors ReliabilityLayer's hasReceivedPacketQueue: tracks the base
+    // message number and a bitmask of received offsets so that retransmitted
+    // reliable packets are ACKed but not re-delivered to the application.
+    dedup_base: u16,
+    dedup_bits: u64, // window of 64 msg_nums ahead of dedup_base
 }
 
 impl Default for SplitBuffer {
@@ -66,6 +71,8 @@ impl SplitBuffer {
     pub fn new() -> Self {
         SplitBuffer {
             pending: HashMap::new(),
+            dedup_base: 0,
+            dedup_bits: 0,
         }
     }
 }
@@ -209,6 +216,31 @@ pub fn parse(data: &[u8], split_buf: &mut SplitBuffer) -> Option<ParseResult> {
                 data: Vec::new(),
             });
 
+            // Track reliable split-fragment msg_nums in the dedup window so that
+            // dedup_base advances past them. Without this, any gap left by split
+            // fragments (whose msg_nums are never seen in the non-split path) keeps
+            // dedup_base stuck, and once reliable msg_nums exceed base+32767 the
+            // "hole > u16::MAX/2" guard falsely drops legitimate new packets.
+            let is_reliable_split = matches!(
+                reliability,
+                Reliability::Reliable
+                    | Reliability::ReliableOrdered
+                    | Reliability::ReliableSequenced
+            );
+            if is_reliable_split {
+                let hole = msg_num.wrapping_sub(split_buf.dedup_base);
+                if hole <= u16::MAX / 2 {
+                    let hole = hole as usize;
+                    if hole < 64 {
+                        split_buf.dedup_bits |= 1u64 << hole;
+                    }
+                    while split_buf.dedup_bits & 1 != 0 {
+                        split_buf.dedup_bits >>= 1;
+                        split_buf.dedup_base = split_buf.dedup_base.wrapping_add(1);
+                    }
+                }
+            }
+
             {
                 let frag = split_buf
                     .pending
@@ -255,6 +287,49 @@ pub fn parse(data: &[u8], split_buf: &mut SplitBuffer) -> Option<ParseResult> {
         let mut pkt_data = vec![0u8; data_bytes];
         if bs.read_aligned_bytes(&mut pkt_data).is_err() {
             break;
+        }
+
+        // Dedup for reliable types: mirrors ReliabilityLayer hasReceivedPacketQueue.
+        // hole_count wraps intentionally (u16 subtraction); values > u16::MAX/2 are
+        // underflows, meaning this msg_num is already past our base = duplicate.
+        let is_reliable = matches!(
+            reliability,
+            Reliability::Reliable | Reliability::ReliableOrdered | Reliability::ReliableSequenced
+        );
+        if is_reliable {
+            let hole = msg_num.wrapping_sub(split_buf.dedup_base);
+            if hole > u16::MAX / 2 {
+                // Already past base — retransmit we already processed; ACK but skip.
+                result.packets.push(InternalPacket {
+                    msg_num,
+                    reliability,
+                    ordering_channel,
+                    ordering_index,
+                    data: Vec::new(), // empty = ACK-only, caller skips process_packet_data
+                });
+                continue;
+            }
+            let hole = hole as usize;
+            if hole < 64 {
+                let bit = 1u64 << hole;
+                if split_buf.dedup_bits & bit != 0 {
+                    // Already received this exact msg_num — duplicate.
+                    result.packets.push(InternalPacket {
+                        msg_num,
+                        reliability,
+                        ordering_channel,
+                        ordering_index,
+                        data: Vec::new(),
+                    });
+                    continue;
+                }
+                split_buf.dedup_bits |= bit;
+            }
+            // Advance base past all contiguous received packets.
+            while split_buf.dedup_bits & 1 != 0 {
+                split_buf.dedup_bits >>= 1;
+                split_buf.dedup_base = split_buf.dedup_base.wrapping_add(1);
+            }
         }
 
         result.packets.push(InternalPacket {
@@ -809,5 +884,40 @@ mod tests {
         assert_eq!(a_data.data, b"AACC");
         assert_eq!(b_data.data, b"BBDD");
         assert!(sb.pending.is_empty());
+    }
+
+    // ── Dedup base advances past split-fragment msg_nums ─────────────────────
+    // Regression: before the fix, split-fragment msg_nums were not tracked in
+    // dedup_bits, so dedup_base stayed stuck at 0. Once non-split reliable
+    // msg_nums exceeded base+32767 the "hole > u16::MAX/2" guard incorrectly
+    // dropped legitimate new packets as past-base retransmits.
+
+    #[test]
+    fn dedup_base_advances_past_split_fragments() {
+        let mut sb = SplitBuffer::new();
+        // Two split fragments with msg_nums 0 and 1
+        let f0 = make_split_frag(0, 8, 0, 0, 0, 0, 2, b"hello");
+        let f1 = make_split_frag(1, 8, 0, 0, 0, 1, 2, b" world");
+        parse(&f0, &mut sb);
+        parse(&f1, &mut sb);
+        // dedup_base must now be 2 (past both split fragments)
+        assert_eq!(sb.dedup_base, 2, "split fragment msg_nums must advance dedup_base");
+    }
+
+    #[test]
+    fn dedup_no_false_positive_after_split_then_non_split() {
+        let mut sb = SplitBuffer::new();
+        // Split: msg_nums 0,1 (simulates RPC_INIT_GAME fragments)
+        let f0 = make_split_frag(0, 8, 0, 0, 7, 0, 2, b"A");
+        let f1 = make_split_frag(1, 8, 0, 0, 7, 1, 2, b"B");
+        parse(&f0, &mut sb);
+        parse(&f1, &mut sb);
+        // Non-split reliable packets starting at msg_num=2
+        for i in 2u16..70 {
+            let pkt = make_packet(b"data", i, 8, 0, 0);
+            let r = parse(&pkt, &mut sb).unwrap();
+            let delivered: Vec<_> = r.packets.iter().filter(|p| !p.data.is_empty()).collect();
+            assert_eq!(delivered.len(), 1, "packet msg_num={i} must not be dropped as false duplicate");
+        }
     }
 }
